@@ -1,0 +1,754 @@
+{
+  "version": "1.0",
+  "note": "semantic_layer.json(팀 2-2 정의)에 없는 개념만 담은 보충 정의. 같은 개념이 semantic_layer.json에 생기면 여기서 지워 주세요.",
+  "field_guide": {
+    "id": "고유 ID",
+    "type": "metric | dimension | business_term",
+    "name": "업무 용어",
+    "aliases": "검색용 별칭(RAG)",
+    "description": "업무상 설명",
+    "tables": "연결 테이블",
+    "columns": "연결 컬럼",
+    "join_keys": "조인 키",
+    "sql": "SQL 조건/식 연결",
+    "formula": "계산식",
+    "numerator": "분자",
+    "denominator": "분모",
+    "grain": "집계 단위",
+    "period": "적용 기간",
+    "filters": "기본 필터",
+    "unit": "단위",
+    "null_handling": "데이터 없음·0 처리",
+    "cautions": "해석 시 주의사항",
+    "actions": "분석·실행 제안",
+    "example_sql": "검증된 예시 SQL"
+  },
+  "items": [
+    {
+      "id": "metric.initial_no_watch_rate",
+      "type": "metric",
+      "name": "초기 미시청률",
+      "aliases": [
+        "결제 후 D+7 미시청률",
+        "초기 미시청",
+        "결제 후 첫주 미시청",
+        "initial no-watch rate",
+        "D+7 미시청"
+      ],
+      "description": "D+30 이내 첫 결제 고객 중 첫 결제일부터 7일 안에 한 번도 시청하지 않은 고객 비율. 초기 시청 실패 고객(첫 주 0~1일) 중 가장 심한 0일 고객의 비중.",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.paid_d30",
+        "user_journey.active_d7_after_pay"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "expression": "1.0 * SUM(CASE WHEN active_d7_after_pay = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)",
+        "where": "paid_d30 = 1",
+        "raw_tables_equivalent": "payment_fact(payment_order = 1, relative_signup_day BETWEEN 0 AND 30) LEFT JOIN watch_daily_fact ON user_key AND w.relative_signup_day BETWEEN p.relative_signup_day AND p.relative_signup_day + 7 → 매칭 없는 고객 비율"
+      },
+      "formula": "초기 미시청 고객 수 ÷ D+30 첫 결제 고객 수",
+      "numerator": "paid_d30 = 1 AND active_d7_after_pay = 0 인 고객 수",
+      "denominator": "paid_d30 = 1 인 고객 수 (12,468명)",
+      "grain": "고객",
+      "period": "가입 후 D+30 이내 첫 결제 → 첫 결제일~+7일(8일 창) 시청 여부",
+      "filters": [
+        "paid_d30 = 1"
+      ],
+      "unit": "%",
+      "null_handling": "분모 0 이면 NULL 반환(NULLIF). 결제하지 않은 고객은 active_d7_after_pay 가 NULL 이므로 분모에서 제외됨.",
+      "cautions": [
+        "대시보드 기준값 20.6%(2,571 ÷ 12,468)",
+        "'초기 시청 실패 고객'(첫 주 0~1일, 4,485명 · 36.0%)과 다름: 미시청률은 그중 0일인 고객만 셈",
+        "D+30 이후 첫 결제(465명)는 제외"
+      ],
+      "actions": [
+        "결제 직후 D0~D3 '이어보기·추천 Top 3' 푸시",
+        "요금제·기기별로 미시청률이 높은 세그먼트부터 온보딩 개선"
+      ],
+      "example_sql": "SELECT COUNT(*) AS paid_users, SUM(active_d7_after_pay = 0) AS no_watch_users, ROUND(100.0 * SUM(active_d7_after_pay = 0) / NULLIF(COUNT(*), 0), 1) AS initial_no_watch_rate_pct FROM user_journey WHERE paid_d30 = 1"
+    },
+    {
+      "id": "metric.avg_watch_time",
+      "type": "metric",
+      "name": "평균 시청시간",
+      "aliases": [
+        "평균 시청 시간",
+        "1인당 시청시간",
+        "시청량",
+        "watch time",
+        "평균 시청량",
+        "일평균 시청시간"
+      ],
+      "description": "시청 고객 1명이 가입 후 D0~D60 동안 시청한 누적 시청시간 평균. 일 단위가 필요하면 시청일 1일당 평균(daily)을 사용.",
+      "tables": [
+        "watch_daily_fact",
+        "user_journey"
+      ],
+      "columns": [
+        "watch_daily_fact.watch_time_raw",
+        "user_journey.watch_time_total",
+        "user_journey.watch_days_total"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "expression": "AVG(watch_time_total)",
+        "where": "watch_days_total > 0",
+        "per_watch_day": "SUM(watch_time_raw) * 1.0 / COUNT(DISTINCT user_key || '|' || watch_date) FROM watch_daily_fact",
+        "minutes": "AVG(watch_time_total) / 60.0"
+      },
+      "formula": "Σ watch_time_raw ÷ 시청 고객 수 (기본) | Σ watch_time_raw ÷ (고객×시청일) 수 (일 평균)",
+      "numerator": "watch_time_raw 합계",
+      "denominator": "시청 기록이 있는 고객 수 (미시청 고객 제외)",
+      "grain": "고객 (또는 고객×시청일)",
+      "period": "가입 후 D0~D60 전체. 기간 지정 시 watch_daily_fact.relative_signup_day 로 필터",
+      "filters": [
+        "watch_days_total > 0"
+      ],
+      "unit": "watch_time_raw 원천 단위(초로 추정). 분 단위 표시 시 /60",
+      "null_handling": "시청 기록이 없는 고객은 분모에서 제외(0 으로 평균에 넣으면 '전체 고객 평균'이 되므로 질문에 '전체 고객 기준'이 있을 때만 0 포함). 분모 0 이면 NULL.",
+      "cautions": [
+        "watch_time_raw 단위가 원천에서 제공되지 않음(초 추정) → 수치 비교는 상대적으로 해석",
+        "평균은 헤비 시청자에 크게 끌려가므로 중앙값·분포도 함께 볼 것",
+        "채널(V/M/L)별로 나눌 때는 watch_daily_fact.channel_type 사용"
+      ],
+      "actions": [
+        "세그먼트별 평균 시청시간이 낮은 그룹에 짧은 콘텐츠(스낵형) 추천",
+        "시청시간 상위 고객 중 자동결제 미설정 고객은 정기구독 전환 대상"
+      ],
+      "example_sql": "SELECT COUNT(*) AS watchers, ROUND(AVG(watch_time_total), 1) AS avg_watch_time_raw, ROUND(AVG(watch_time_total) / 60.0, 1) AS avg_watch_minutes_est FROM user_journey WHERE watch_days_total > 0"
+    },
+    {
+      "id": "metric.campaign_response_rate",
+      "type": "metric",
+      "name": "캠페인 반응률",
+      "aliases": [
+        "캠페인 반응",
+        "푸시 반응률",
+        "캠페인 응답률",
+        "CTR",
+        "클릭률",
+        "반응률",
+        "campaign response"
+      ],
+      "description": "캠페인 발송 고객 중 목표 행동(클릭·재생·결제)을 한 고객 비율. 제공 데이터에 캠페인 발송·노출·클릭 로그가 없어 정식 계산은 불가하며, 앱 내 추천 노출에 대한 반응(추천 콘텐츠 클릭)을 대리 지표로 제공한다.",
+      "tables": [
+        "user_journey",
+        "behavior_fact"
+      ],
+      "columns": [
+        "user_journey.recommend_clicked_d30",
+        "user_journey.home_visited_d30",
+        "user_journey.push_opt_in"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "status": "proxy_only",
+        "official": "반응 고객 수 / 발송 고객 수 — campaign_send_log, campaign_response_log 필요(미제공)",
+        "proxy_expression": "1.0 * SUM(recommend_clicked_d30) / NULLIF(SUM(home_visited_d30), 0)",
+        "proxy_where": "home_visited_d30 = 1"
+      },
+      "formula": "(정식) 반응 고객 ÷ 발송 고객 | (대리) 추천 콘텐츠 클릭 고객 ÷ 홈 방문 고객",
+      "numerator": "(대리) recommend_clicked_d30 = 1 고객 수",
+      "denominator": "(대리) home_visited_d30 = 1 고객 수 (추천 영역 노출 가능 고객)",
+      "grain": "고객",
+      "period": "가입 후 D0~D30",
+      "filters": [
+        "home_visited_d30 = 1"
+      ],
+      "unit": "%",
+      "null_handling": "발송 로그가 없으므로 정식 지표는 '데이터 없음'으로 답하고 대리 지표임을 명시. 분모 0 이면 NULL.",
+      "cautions": [
+        "대리 지표는 실제 캠페인 성과가 아님 — 반드시 '대리 지표'라고 표시",
+        "추천 클릭 고객은 133건 수준으로 매우 적어 세그먼트별 비율은 표본이 작음",
+        "푸시 도달 가능 규모는 push_opt_in = 1 고객 수로만 추정 가능"
+      ],
+      "actions": [
+        "캠페인 발송·노출·클릭 로그(campaign_id, user_key, sent_at, clicked_at) 수집 필요",
+        "타깃별 홀드아웃(10%)을 두고 결제·시청 전환 차이로 반응률 측정"
+      ],
+      "example_sql": "SELECT SUM(home_visited_d30) AS home_visitors, SUM(recommend_clicked_d30) AS recommend_clickers, ROUND(100.0 * SUM(recommend_clicked_d30) / NULLIF(SUM(home_visited_d30), 0), 2) AS proxy_response_rate_pct FROM user_journey WHERE home_visited_d30 = 1"
+    },
+    {
+      "id": "metric.channel_usage_rate",
+      "type": "metric",
+      "name": "콘텐츠 유형 이용률(VOD·영화·LIVE)",
+      "aliases": [
+        "VOD 이용률",
+        "영화 이용률",
+        "LIVE 이용률",
+        "라이브 이용률",
+        "채널 이용률",
+        "VOD 이용 고객",
+        "영화 이용 고객",
+        "LIVE 이용 고객"
+      ],
+      "description": "D+30 첫 결제 고객 중 결제 후 28일 내 VOD(V)·영화(M)·LIVE(L)를 시청한 고객 비율.",
+      "tables": [
+        "user_journey",
+        "watch_daily_fact"
+      ],
+      "columns": [
+        "user_journey.used_vod_28d",
+        "user_journey.used_movie_28d",
+        "user_journey.used_live_28d",
+        "watch_daily_fact.channel_type"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "expression": "1.0 * SUM(used_vod_28d) / NULLIF(COUNT(*), 0)",
+        "where": "paid_d30 = 1",
+        "raw": "watch_daily_fact.channel_type IN ('V','M','L')"
+      },
+      "formula": "채널 시청 고객 ÷ 첫 결제 고객",
+      "numerator": "used_*_28d = 1",
+      "denominator": "paid_d30 = 1",
+      "grain": "고객",
+      "period": "첫 결제일~+28일",
+      "filters": [
+        "paid_d30 = 1"
+      ],
+      "unit": "%",
+      "null_handling": "미결제 고객 NULL",
+      "cautions": [
+        "한 고객이 여러 유형을 볼 수 있어 합이 100%를 넘음",
+        "가입 후 전체 기간 기준이 필요하면 watch_daily_fact.channel_type 으로 직접 계산"
+      ],
+      "actions": [
+        "LIVE 이용률이 낮으면 LIVE 편성 알림 대상 축소"
+      ],
+      "example_sql": "SELECT ROUND(100.0 * SUM(used_vod_28d) / COUNT(*), 1) AS vod_pct, ROUND(100.0 * SUM(used_movie_28d) / COUNT(*), 1) AS movie_pct, ROUND(100.0 * SUM(used_live_28d) / COUNT(*), 1) AS live_pct FROM user_journey WHERE paid_d30 = 1"
+    },
+    {
+      "id": "dim.content_genre",
+      "type": "dimension",
+      "name": "콘텐츠 장르",
+      "aliases": [
+        "장르",
+        "장르별",
+        "로맨스",
+        "드라마",
+        "액션",
+        "판타지",
+        "스릴러",
+        "코미디",
+        "애니메이션",
+        "중드",
+        "일드",
+        "genre"
+      ],
+      "description": "콘텐츠의 장르. VOD 시리즈 장르(VOD_SERIES_GENRE)와 영화 장르(MOVIE_GENRE)가 별도 체계. 고객의 장르는 user_content_summary → content_genre_bridge 로 연결.",
+      "tables": [
+        "content_genre_bridge",
+        "content_dim",
+        "user_content_summary"
+      ],
+      "columns": [
+        "content_genre_bridge.genre_name",
+        "content_genre_bridge.genre_source",
+        "user_content_summary.content_key",
+        "user_content_summary.total_watch_time_raw"
+      ],
+      "join_keys": [
+        "user_content_summary.content_key = content_genre_bridge.content_key",
+        "user_content_summary.user_key = user_journey.user_key"
+      ],
+      "sql": {
+        "group_by": "g.genre_name (필요 시 g.genre_source 와 함께)",
+        "join": "FROM user_content_summary s JOIN content_genre_bridge g ON g.content_key = s.content_key",
+        "exclude": "g.genre_source <> 'LIVE_CHANNEL_GENRE'"
+      },
+      "formula": "-",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "고객×장르 또는 콘텐츠×장르",
+      "period": "가입 후 D0~D60 (first_watch_day/last_watch_day 로 기간 제한)",
+      "filters": [
+        "genre_source <> 'LIVE_CHANNEL_GENRE'"
+      ],
+      "unit": "구간",
+      "null_handling": "장르 매핑이 없는 콘텐츠는 제외(내부 조인). LIVE 장르는 코드값만 있어 제외",
+      "cautions": [
+        "한 콘텐츠가 여러 장르 → 고객 수는 COUNT(DISTINCT s.user_key)",
+        "같은 이름이라도 영화 '로맨스'와 VOD '로맨스'는 체계가 다름 — 구분이 필요하면 genre_source 표시",
+        "'19' 같은 숫자 장르명은 원천 코드값"
+      ],
+      "actions": [
+        "유지율 높은 장르를 결제 직후 첫 추천에 배치"
+      ],
+      "example_sql": "SELECT g.genre_name, COUNT(DISTINCT s.user_key) AS viewers, SUM(s.total_watch_time_raw) AS watch_time FROM user_content_summary s JOIN content_genre_bridge g ON g.content_key = s.content_key WHERE g.genre_source <> 'LIVE_CHANNEL_GENRE' GROUP BY g.genre_name ORDER BY viewers DESC LIMIT 10"
+    },
+    {
+      "id": "dim.signup_date",
+      "type": "dimension",
+      "name": "가입일",
+      "aliases": [
+        "가입 일자",
+        "일별",
+        "날짜별",
+        "추이",
+        "일별 추이",
+        "가입일별",
+        "트렌드",
+        "signup date"
+      ],
+      "description": "고객의 가입일(일 단위). 시간 추이 분석의 기준. 월 단위는 signup_month.",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.signup_date",
+        "user_journey.signup_month"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "group_by": "signup_date",
+        "monthly": "signup_month",
+        "condition_examples": {
+          "2월": "signup_month = '2025-02'",
+          "3월": "signup_month = '2025-03'"
+        }
+      },
+      "formula": "-",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "일",
+      "period": "2025-02-01 ~ 2025-04-01",
+      "filters": [],
+      "unit": "날짜",
+      "null_handling": "가입자가 없는 날은 행이 없음(0 으로 채우려면 날짜 테이블 필요)",
+      "cautions": [
+        "최근 가입자는 관측 기간이 짧지 않음(모두 D0~D60 관측) — 단, 4월은 1일 하루뿐",
+        "추이는 선 차트로 표시"
+      ],
+      "actions": [
+        "가입 급증일과 프로모션 일정 대조"
+      ],
+      "example_sql": "SELECT signup_date, COUNT(*) AS signups, ROUND(100.0 * SUM(paid_d30) / COUNT(*), 1) AS d30_conv_pct FROM user_journey GROUP BY signup_date ORDER BY signup_date"
+    },
+    {
+      "id": "term.active_customer",
+      "type": "business_term",
+      "name": "활성 고객",
+      "aliases": [
+        "활성 사용자",
+        "액티브 고객",
+        "결제 후 활성 고객",
+        "D+N 활성 고객",
+        "D+7 활성 고객",
+        "시청 활성"
+      ],
+      "description": "결제 후 D+N 활성 고객: D+30 이내 첫 결제 고객 중 첫 결제일부터 N일 안에 시청 기록이 있는 고객. N 미지정 시 7.",
+      "tables": [
+        "user_journey",
+        "watch_daily_fact",
+        "payment_fact"
+      ],
+      "columns": [
+        "user_journey.active_d7_after_pay",
+        "user_journey.active_d14_after_pay",
+        "user_journey.active_d28_after_pay"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "condition": "paid_d30 = 1 AND active_d7_after_pay = 1",
+        "n14": "active_d14_after_pay = 1",
+        "n28": "active_d28_after_pay = 1",
+        "any_n": "EXISTS (SELECT 1 FROM watch_daily_fact w WHERE w.user_key = user_journey.user_key AND w.relative_signup_day BETWEEN user_journey.first_pay_day AND user_journey.first_pay_day + N)"
+      },
+      "formula": "조건을 만족하는 고객 집합 (활성화율 = 활성 고객 ÷ 첫 결제 고객)",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "고객",
+      "period": "첫 결제일~+N일 (기본 N = 7)",
+      "filters": [
+        "paid_d30 = 1"
+      ],
+      "unit": "명",
+      "null_handling": "미결제 고객 제외",
+      "cautions": [
+        "D+7 9,897명(79.4%), D+14 82.8%, D+28 85.6%",
+        "'가입 후 아무 때나 시청한 고객'과 다름 — 결제 여부 무관 활성은 watched_d0_30 = 1 로 별도 표기"
+      ],
+      "actions": [
+        "활성 고객 중 자동결제 미설정 고객에 정기구독 혜택"
+      ],
+      "example_sql": "SELECT COUNT(*) AS paid_users, SUM(active_d7_after_pay) AS active_d7_users, ROUND(100.0 * SUM(active_d7_after_pay) / COUNT(*), 1) AS active_d7_pct FROM user_journey WHERE paid_d30 = 1"
+    },
+    {
+      "id": "term.no_watch_customer",
+      "type": "business_term",
+      "name": "미시청 고객",
+      "aliases": [
+        "시청 안 한 고객",
+        "미시청자",
+        "비시청 고객",
+        "시청 기록 없는 고객",
+        "안 본 고객"
+      ],
+      "description": "가입 후 D0~D30 시청 기록(watch_daily_fact)이 하나도 없는 가입 고객. 결제 고객의 결제 후 미시청은 '초기 시청 실패 고객'을 사용.",
+      "tables": [
+        "user_journey",
+        "watch_daily_fact"
+      ],
+      "columns": [
+        "user_journey.watched_d0_30",
+        "user_journey.watch_days_total"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "condition": "watched_d0_30 = 0",
+        "whole_period": "watch_days_total = 0 (D0~D60 전체 미시청)"
+      },
+      "formula": "조건을 만족하는 고객 집합",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "고객",
+      "period": "가입 후 D0~D30 (전체 관측 기간이면 D0~D60)",
+      "filters": [],
+      "unit": "명",
+      "null_handling": "watch_daily_fact 에 행이 없으면 시청 없음으로 간주",
+      "cautions": [
+        "결제 없이 시청한 고객(무료 시청)도 있어 '미결제 = 미시청'이 아님",
+        "기간을 명시하지 않으면 D0~D30 기준이라고 표시"
+      ],
+      "actions": [
+        "미시청·이용권 조회 고객은 '이용권 탐색 망설임군'으로 할인 제안"
+      ],
+      "example_sql": "SELECT COUNT(*) AS no_watch_users, ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM user_journey), 1) AS share_pct FROM user_journey WHERE watched_d0_30 = 0"
+    },
+    {
+      "id": "term.push_reachable",
+      "type": "business_term",
+      "name": "푸시 도달 가능 고객",
+      "aliases": [
+        "푸시 도달",
+        "푸시 수신 가능",
+        "캠페인 도달 가능",
+        "도달 가능 규모",
+        "push"
+      ],
+      "description": "현재 푸시 수신 동의 고객(push_opt_in_current = 1). 캠페인 실제 도달 규모 산정 기준.",
+      "tables": [
+        "user_journey",
+        "user_dim"
+      ],
+      "columns": [
+        "user_journey.push_opt_in",
+        "user_dim.push_opt_in_current"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "condition": "push_opt_in = 1"
+      },
+      "formula": "-",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "고객",
+      "period": "현재 시점",
+      "filters": [],
+      "unit": "명",
+      "null_handling": "-",
+      "cautions": [
+        "전체 22,365명(44.7%)",
+        "문자·이메일 수신 동의 정보는 없음"
+      ],
+      "actions": [
+        "타깃 × 푸시 동의로 실제 도달 규모 산정"
+      ],
+      "example_sql": "SELECT SUM(push_opt_in) AS push_reachable, ROUND(100.0 * SUM(push_opt_in) / COUNT(*), 1) AS pct FROM user_journey"
+    },
+    {
+      "id": "term.target_voucher_hesitators",
+      "type": "business_term",
+      "name": "이용권 관심 후 미결제",
+      "aliases": [
+        "Voucher Hesitators",
+        "우선 타깃 1",
+        "우선 타깃 1위",
+        "타깃 1",
+        "1순위 타깃",
+        "결제 망설임 고객",
+        "이용권 보고 결제 안 한 고객"
+      ],
+      "description": "팀 1-3 최종 우선 타깃 1위(대시보드 동일). D0~D30 이용권 페이지(VOUCHER_VIEW)를 봤지만 D+30 이내 첫 결제가 없는 고객. 퍼널 최대 병목(이용권 관심 → 첫 결제) 구간.",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.voucher_viewed_d30",
+        "user_journey.paid_d30",
+        "user_journey.voucher_view_cnt_d30",
+        "user_journey.push_opt_in"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "condition": "voucher_viewed_d30 = 1 AND paid_d30 = 0",
+        "high_intent_subset": "voucher_view_cnt_d30 >= 3 (재방문 3회+ 고의도 고객)"
+      },
+      "formula": "-",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "고객",
+      "period": "가입 후 D0~D30 (결제는 D+30 이내)",
+      "filters": [],
+      "unit": "명",
+      "null_handling": "-",
+      "cautions": [
+        "18,991명(38.0%) · 푸시 도달 8,152명",
+        "이용권 관심 고객의 D+30 결제 전환율 33.7%. 이용권 조회 1회 18.8% · 2회 32.9% · 3회+ 53.7%로 재방문할수록 결제율 상승",
+        "D+30 이후 결제한 고객도 '미결제'로 셈"
+      ],
+      "actions": [
+        "첫 달 할인 쿠폰 · 결제 리마인드 푸시",
+        "이탈 직전 조회 콘텐츠 하이라이트로 재방문 유도"
+      ],
+      "example_sql": "SELECT COUNT(*) AS users, SUM(push_opt_in) AS push_reachable, SUM(voucher_view_cnt_d30 >= 3) AS viewed_3plus FROM user_journey WHERE voucher_viewed_d30 = 1 AND paid_d30 = 0"
+    },
+    {
+      "id": "term.target_browsing_fatigue",
+      "type": "business_term",
+      "name": "선택 피로 방랑 유저",
+      "aliases": [
+        "Browsing Fatigue",
+        "방랑 유저",
+        "우선 타깃 2",
+        "우선 타깃 2위",
+        "타깃 2",
+        "2순위 타깃",
+        "검색만 하는 고객"
+      ],
+      "description": "팀 1-3 최종 우선 타깃 2위(대시보드 동일). D0~D30 검색(SEARCH_*) N회 이상(기본 3)인데 재생 클릭(DETAIL_PLAY_CLICK) 0회. 캠페인 기획 대상.",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.search_cnt_d30",
+        "user_journey.play_click_cnt_d30"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "condition": "search_cnt_d30 >= 3 AND play_click_cnt_d30 = 0",
+        "parameter": "검색 기준 N: 3 / 5 / 10"
+      },
+      "formula": "-",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "고객",
+      "period": "가입 후 D0~D30",
+      "filters": [],
+      "unit": "명",
+      "null_handling": "-",
+      "cautions": [
+        "N = 3 기준 10,216명(20.4%) · 푸시 도달 4,270명",
+        "재생 클릭이 0이어도 이어보기·자동재생으로 시청한 고객이 있음(D0~30 시청 62.9%, 같은 검색량에 재생 클릭 있는 고객은 97.7%)",
+        "추천 콘텐츠 클릭 고객은 전체 50,000명 중 72명"
+      ],
+      "actions": [
+        "홈 첫 화면 '나를 위한 Top 3' 큐레이션",
+        "클릭형 · 스낵형 · 몰입형으로 나눠 발송 시점 차별화"
+      ],
+      "example_sql": "SELECT COUNT(*) AS users, SUM(push_opt_in) AS push_reachable FROM user_journey WHERE search_cnt_d30 >= 3 AND play_click_cnt_d30 = 0"
+    },
+    {
+      "id": "term.target_unexplored_signups",
+      "type": "business_term",
+      "name": "가입 후 미탐색",
+      "aliases": [
+        "Unexplored Signups",
+        "우선 타깃 3",
+        "우선 타깃 3위",
+        "타깃 3",
+        "3순위 타깃",
+        "미탐색 고객",
+        "탐색 안 한 고객"
+      ],
+      "description": "팀 1-3 최종 우선 타깃 3위(대시보드 동일). 가입 후 D0~D30 능동 탐색 행동(검색 · 카테고리 · 상세 · 추천 클릭 · 재생 클릭)이 한 번도 없는 고객. 퍼널 입구(가입 → 탐색)의 최대 이탈 구간.",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.explored_d30",
+        "user_journey.has_behavior_d30",
+        "user_journey.push_opt_in"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "condition": "explored_d30 = 0",
+        "no_behavior_subset": "has_behavior_d30 = 0 (행동 기록 자체가 없음 · 4,697명)"
+      },
+      "formula": "-",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "고객",
+      "period": "가입 후 D0~D30",
+      "filters": [],
+      "unit": "명",
+      "null_handling": "행동 기록이 없는 고객도 미탐색에 포함",
+      "cautions": [
+        "19,879명(39.8%) · 푸시 도달 9,439명. 미탐색률 39.8%(탐색률 60.2%와 혼동 주의)",
+        "그중 15,182명은 홈 · 이용권 화면만 봄, 4,697명은 행동 기록 없음",
+        "결제율 7.0%로 탐색 고객(36.8%)의 1/5 수준"
+      ],
+      "actions": [
+        "가입 직후 웰컴 푸시와 입문 콘텐츠 추천",
+        "퍼널 입구를 넓혀 1 · 2위 타깃으로 넘어오는 고객 확대"
+      ],
+      "example_sql": "SELECT COUNT(*) AS users, SUM(push_opt_in) AS push_reachable, SUM(has_behavior_d30 = 0) AS no_behavior FROM user_journey WHERE explored_d30 = 0"
+    },
+    {
+      "id": "term.candidate_voucher_browsers",
+      "type": "business_term",
+      "name": "이용권 탐색 망설임군",
+      "aliases": [
+        "Voucher Browsers",
+        "망설임 고객",
+        "이용권 망설임",
+        "이용권 3회 이상 미결제"
+      ],
+      "description": "1-2 (5) 타깃 후보군(최종 1위 '이용권 관심 후 미결제'의 고의도 부분집합). D0~D30 이용권 페이지 조회 3회 이상, D+30 이내 첫 결제 없음, D0~D30 시청 기록 없음.",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.voucher_view_cnt_d30",
+        "user_journey.paid_d30",
+        "user_journey.watched_d0_30"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "condition": "voucher_view_cnt_d30 >= 3 AND paid_d30 = 0 AND watched_d0_30 = 0"
+      },
+      "formula": "-",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "고객",
+      "period": "가입 후 D0~D30",
+      "filters": [],
+      "unit": "명",
+      "null_handling": "-",
+      "cautions": [
+        "3,645명(7.3%) · 푸시 도달 1,553명. 최종 우선 타깃이 아니라 후보군",
+        "이용권 3회 이상 방문 고객의 결제율 53.7%"
+      ],
+      "actions": [
+        "1위 타깃 캠페인 안에서 할인 강도를 높이는 세그먼트로 활용"
+      ],
+      "example_sql": "SELECT COUNT(*) AS users, SUM(push_opt_in) AS push_reachable FROM user_journey WHERE voucher_view_cnt_d30 >= 3 AND paid_d30 = 0 AND watched_d0_30 = 0"
+    },
+    {
+      "id": "term.candidate_unanchored_heavy",
+      "type": "business_term",
+      "name": "헤비 시청 고위험 이탈군",
+      "aliases": [
+        "Unanchored Heavy",
+        "헤비 시청자",
+        "자동결제 미설정 헤비"
+      ],
+      "description": "1-2 (5) 타깃 후보군(근거 부족으로 최종 제외 · 재검토 필요). D0~D60 시청일 4일 이상인데 자동결제 결제 이력이 없음(미결제 포함).",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.watch_days_total",
+        "user_journey.ever_auto_payment"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "condition": "watch_days_total >= 4 AND ever_auto_payment = 0"
+      },
+      "formula": "-",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "고객",
+      "period": "가입 후 D0~D60",
+      "filters": [],
+      "unit": "명",
+      "null_handling": "-",
+      "cautions": [
+        "4,769명(9.5%) · 푸시 도달 1,759명. 최종 우선 타깃이 아니라 후보군",
+        "그중 2,417명은 결제 이력이 없음. 결합상품 결제 고객 지속률(72.7%)이 자동결제 고객(68.0%)보다 높아 '자동결제 미설정 = 이탈 위험' 근거가 약함"
+      ],
+      "actions": [
+        "자동결제 유도는 근거 보강 후 재검토"
+      ],
+      "example_sql": "SELECT COUNT(*) AS users, SUM(payment_count = 0) AS never_paid FROM user_journey WHERE watch_days_total >= 4 AND ever_auto_payment = 0"
+    },
+    {
+      "id": "term.preferred_content",
+      "type": "business_term",
+      "name": "선호 콘텐츠·선호 장르",
+      "aliases": [
+        "선호 콘텐츠",
+        "선호 장르",
+        "많이 본 작품",
+        "인기 작품",
+        "인기 콘텐츠",
+        "가장 많이 본",
+        "top 콘텐츠"
+      ],
+      "description": "고객별 total_watch_time_raw(또는 watch_day_count)가 가장 높은 콘텐츠, 장르를 연결한 뒤 시청 비중이 가장 높은 장르. 작품명은 content_dim.title(LIVE 는 channel_name).",
+      "tables": [
+        "user_content_summary",
+        "content_dim",
+        "content_genre_bridge"
+      ],
+      "columns": [
+        "user_content_summary.total_watch_time_raw",
+        "user_content_summary.watch_day_count",
+        "content_dim.title",
+        "content_dim.channel_name"
+      ],
+      "join_keys": [
+        "user_content_summary.content_key = content_dim.content_key"
+      ],
+      "sql": {
+        "per_user_top": "ROW_NUMBER() OVER (PARTITION BY user_key ORDER BY total_watch_time_raw DESC) = 1",
+        "title": "COALESCE(c.title, c.channel_name)"
+      },
+      "formula": "-",
+      "numerator": "-",
+      "denominator": "-",
+      "grain": "고객×콘텐츠",
+      "period": "가입 후 D0~D60",
+      "filters": [],
+      "unit": "-",
+      "null_handling": "제목이 비어 있는 콘텐츠는 제외 또는 content_key 표시",
+      "cautions": [
+        "작품 순위는 시청자 수(COUNT DISTINCT user_key)와 시청시간 중 기준을 명시"
+      ],
+      "actions": [
+        "타깃별 선호 작품을 캠페인 소재로 사용"
+      ],
+      "example_sql": "SELECT COALESCE(c.title, c.channel_name) AS title, c.channel_type, COUNT(DISTINCT s.user_key) AS viewers FROM user_content_summary s JOIN content_dim c ON c.content_key = s.content_key GROUP BY s.content_key ORDER BY viewers DESC LIMIT 10"
+    }
+  ]
+}

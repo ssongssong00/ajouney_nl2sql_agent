@@ -1,0 +1,1012 @@
+{
+  "section": "2-1",
+  "title": "DB · 메타데이터",
+  "database": "SQLite 3.51 (Node.js 22 내장 node:sqlite)",
+  "summary": "모든 날짜는 TEXT 'YYYY-MM-DD'. relative_signup_day 는 가입일 기준 경과일(가입 당일 = 0). 고객은 2025-02-01~2025-04-01 가입자 50,000명이며, 관측 기간은 테이블마다 다름 — 행동 D0~D30 · 시청 D0~D60 · 결제 D0~D90.",
+  "date_rules": {
+    "format": "모든 날짜는 TEXT 'YYYY-MM-DD'",
+    "shift": "개인정보 보호를 위해 실제 날짜를 365일 이전으로 이동. 상대일 컬럼은 이동과 무관하게 원래 여정을 유지",
+    "relative_signup_day": "가입 당일 = 0"
+  },
+  "observation_window": [
+    {
+      "table": "behavior_fact",
+      "window": "D0~D30"
+    },
+    {
+      "table": "watch_daily_fact",
+      "window": "D0~D60"
+    },
+    {
+      "table": "user_content_summary",
+      "window": "D0~D60"
+    },
+    {
+      "table": "payment_fact",
+      "window": "D0~D90"
+    }
+  ],
+  "preprocessing": [
+    "분할 CSV를 UNION ALL로 병합하고, export_part 중복 적재가 없음을 검증한 뒤 컬럼은 제외",
+    "날짜 TEXT 'YYYY-MM-DD' · 금액 REAL · 코드값(gender_code, currency_type_id) INTEGER",
+    "content_dim NULL은 원본 유지: LIVE content_id 126건, program_id 2건(VOD 1 · LIVE 1)",
+    "relative_signup_day = 날짜 − 가입일 정합성 검증 (불일치 0건)"
+  ],
+  "relationships": [
+    {
+      "from": "payment_fact.user_key",
+      "to": "user_dim.user_key",
+      "type": "N:1",
+      "join": "payment_fact.user_key = user_dim.user_key",
+      "note": "첫 결제만 볼 때는 payment_order = 1 조건을 반드시 추가 (고객당 1행)"
+    },
+    {
+      "from": "behavior_fact.user_key",
+      "to": "user_dim.user_key",
+      "type": "N:1",
+      "join": "behavior_fact.user_key = user_dim.user_key",
+      "note": "고객 수는 COUNT(DISTINCT user_key)"
+    },
+    {
+      "from": "watch_daily_fact.user_key",
+      "to": "user_dim.user_key",
+      "type": "N:1",
+      "join": "watch_daily_fact.user_key = user_dim.user_key",
+      "note": "결제 후 기간은 relative_signup_day와 첫 결제의 relative_signup_day 차이로 계산"
+    },
+    {
+      "from": "user_content_summary.user_key",
+      "to": "user_dim.user_key",
+      "type": "N:1",
+      "join": "user_content_summary.user_key = user_dim.user_key"
+    },
+    {
+      "from": "user_content_summary.content_key",
+      "to": "content_dim.content_key",
+      "type": "N:1",
+      "join": "user_content_summary.content_key = content_dim.content_key"
+    },
+    {
+      "from": "content_genre_bridge.content_key",
+      "to": "content_dim.content_key",
+      "type": "N:1 (콘텐츠:장르 = N:M)",
+      "join": "content_genre_bridge.content_key = content_dim.content_key",
+      "note": "장르 조인 시 고객·콘텐츠가 장르 수만큼 중복되므로 COUNT(DISTINCT) 사용"
+    },
+    {
+      "from": "user_journey.user_key",
+      "to": "user_dim.user_key",
+      "type": "1:1",
+      "join": "user_journey.user_key = user_dim.user_key",
+      "note": "user_journey에 user_dim 속성이 이미 포함되어 보통 조인 불필요"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "idx_watch_user_day",
+      "table": "watch_daily_fact",
+      "columns": [
+        "user_key",
+        "relative_signup_day"
+      ],
+      "reason": "결제 후 D+N 시청 여부 (기간 범위 조회)",
+      "status": "verified"
+    },
+    {
+      "name": "idx_genre_cover",
+      "table": "content_genre_bridge",
+      "columns": [
+        "content_key",
+        "genre_name"
+      ],
+      "reason": "장르 조인 커버링 인덱스 → 테이블 접근 생략 (5.3s → 0.75s)",
+      "status": "needs_verification"
+    },
+    {
+      "name": "idx_behavior_type_user",
+      "table": "behavior_fact",
+      "columns": [
+        "behavior_type",
+        "user_key"
+      ],
+      "reason": "행동 유형별 고객 수 집계 (VOUCHER_VIEW 등)",
+      "status": "needs_verification"
+    },
+    {
+      "name": "idx_pay_order_user",
+      "table": "payment_fact",
+      "columns": [
+        "payment_order",
+        "user_key"
+      ],
+      "reason": "첫 결제(payment_order = 1) 조회",
+      "status": "needs_verification"
+    }
+  ],
+  "tables": [
+    {
+      "name": "user_dim",
+      "kind": "dimension",
+      "row_count": 50000,
+      "primary_key": [
+        "user_key"
+      ],
+      "foreign_keys": [],
+      "observation_window": null,
+      "description": "가입 고객 마스터. 고객 1명당 1행. 모든 분석의 모수(가입 고객)이며 연령대·기기·성별·푸시 수신 등 세그먼트 기준을 가진다.",
+      "columns": [
+        {
+          "name": "user_key",
+          "type": "TEXT",
+          "description": "비식별 사용자키 (64자 해시)",
+          "nullable": false
+        },
+        {
+          "name": "signup_date",
+          "type": "TEXT",
+          "description": "날짜 이동된 가입일 'YYYY-MM-DD' (실제 날짜에서 365일 이전으로 이동)",
+          "nullable": false,
+          "range": [
+            "2025-02-01",
+            "2025-04-01"
+          ]
+        },
+        {
+          "name": "signup_device_type",
+          "type": "TEXT",
+          "description": "가입 시 기록된 기기 유형",
+          "nullable": false,
+          "values": [
+            "mobile",
+            "android",
+            "ios",
+            "pc"
+          ]
+        },
+        {
+          "name": "gender_code",
+          "type": "INTEGER",
+          "description": "원천 성별 코드. 남성·여성으로 임의 해석하지 않는다",
+          "nullable": false,
+          "values": [
+            0,
+            1,
+            2
+          ]
+        },
+        {
+          "name": "age_band",
+          "type": "TEXT",
+          "description": "가입 당시 연령대 (기본값·비정상 생년월일은 UNKNOWN)",
+          "nullable": false,
+          "values": [
+            "UNDER_14",
+            "14_19",
+            "20_29",
+            "30_39",
+            "40_49",
+            "50_59",
+            "60_69",
+            "70_PLUS",
+            "UNKNOWN"
+          ]
+        },
+        {
+          "name": "push_opt_in_current",
+          "type": "INTEGER",
+          "description": "데이터 추출 시점의 푸시 수신 가능 여부 (가입 당시 아님)",
+          "nullable": false,
+          "values": {
+            "1": "수신 가능",
+            "0": "그 외"
+          }
+        }
+      ]
+    },
+    {
+      "name": "payment_fact",
+      "kind": "fact",
+      "row_count": 14388,
+      "primary_key": [
+        "payment_key"
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_key",
+          "references": "user_dim.user_key"
+        }
+      ],
+      "observation_window": "D0~D90",
+      "description": "결제 이력. 결제 1건당 1행. 첫 결제는 payment_order = 1 (고객당 최대 1행으로 검증됨). 가입 후 D0~D90 만 존재.",
+      "columns": [
+        {
+          "name": "payment_key",
+          "type": "TEXT",
+          "description": "비식별 결제키",
+          "nullable": false
+        },
+        {
+          "name": "user_key",
+          "type": "TEXT",
+          "description": "비식별 사용자키 (64자 해시)",
+          "nullable": false
+        },
+        {
+          "name": "payment_date",
+          "type": "TEXT",
+          "description": "날짜 이동된 결제일 'YYYY-MM-DD'",
+          "nullable": false
+        },
+        {
+          "name": "relative_signup_day",
+          "type": "INTEGER",
+          "description": "가입일 기준 경과일 (가입 당일 = 0)",
+          "nullable": false,
+          "range": [
+            0,
+            90
+          ]
+        },
+        {
+          "name": "payment_order",
+          "type": "INTEGER",
+          "description": "제공 기간 내 고객별 결제 순서. 1 = 첫 결제, 2 이상은 추가 결제이며 자동 갱신이 아니다",
+          "nullable": false,
+          "range": [
+            1,
+            6
+          ]
+        },
+        {
+          "name": "source_user_type",
+          "type": "TEXT",
+          "description": "원천 결제 구분값",
+          "nullable": false,
+          "values": [
+            "new",
+            "re"
+          ]
+        },
+        {
+          "name": "product_code",
+          "type": "TEXT",
+          "description": "이용권 상품 코드",
+          "nullable": false
+        },
+        {
+          "name": "product_name",
+          "type": "TEXT",
+          "description": "이용권 상품명 (51종). 상품군 매핑은 semantic_layer.json의 dimensions.product_family 참고",
+          "nullable": false
+        },
+        {
+          "name": "transaction_amount",
+          "type": "REAL",
+          "description": "결제 거래금액. currency_type_id가 다르면 합산 금지",
+          "nullable": false
+        },
+        {
+          "name": "cash_paid_amount",
+          "type": "REAL",
+          "description": "PG 등을 통해 직접 결제된 금액",
+          "nullable": false
+        },
+        {
+          "name": "coin_used_amount",
+          "type": "REAL",
+          "description": "결제에 사용된 코인",
+          "nullable": false
+        },
+        {
+          "name": "bonus_used_amount",
+          "type": "REAL",
+          "description": "결제에 사용된 보너스 금액",
+          "nullable": false
+        },
+        {
+          "name": "discount_amount",
+          "type": "REAL",
+          "description": "일반 할인금액 (현재 데이터는 전부 0)",
+          "nullable": false
+        },
+        {
+          "name": "promotion_discount_amount",
+          "type": "REAL",
+          "description": "프로모션 할인금액",
+          "nullable": false
+        },
+        {
+          "name": "currency_type_id",
+          "type": "INTEGER",
+          "description": "통화 유형 코드",
+          "nullable": false,
+          "values": [
+            1,
+            2
+          ]
+        },
+        {
+          "name": "payment_device_type",
+          "type": "TEXT",
+          "description": "결제 기기 유형",
+          "nullable": true,
+          "values": [
+            "android",
+            "appletv",
+            "ios",
+            "lgtv",
+            "mobile",
+            "ott",
+            "ott_unocube2",
+            "pc",
+            "sstv"
+          ]
+        },
+        {
+          "name": "market_type_id",
+          "type": "INTEGER",
+          "description": "결제 마켓 유형 코드",
+          "nullable": false
+        },
+        {
+          "name": "partner_type_id",
+          "type": "INTEGER",
+          "description": "결제 파트너 유형 코드",
+          "nullable": false
+        },
+        {
+          "name": "promotion_id",
+          "type": "TEXT",
+          "description": "적용 프로모션 ID",
+          "nullable": true
+        },
+        {
+          "name": "package_type_id",
+          "type": "INTEGER",
+          "description": "이용권 패키지 유형",
+          "nullable": false
+        },
+        {
+          "name": "screen_quality_type_id",
+          "type": "INTEGER",
+          "description": "제공 화질 유형",
+          "nullable": false
+        },
+        {
+          "name": "screen_type_id",
+          "type": "INTEGER",
+          "description": "지원 화면 유형",
+          "nullable": false
+        },
+        {
+          "name": "is_auto_payment",
+          "type": "INTEGER",
+          "description": "자동결제 여부",
+          "nullable": false,
+          "values": {
+            "1": "자동",
+            "0": "비자동"
+          }
+        },
+        {
+          "name": "service_start_date",
+          "type": "TEXT",
+          "description": "날짜 이동된 이용권 시작일",
+          "nullable": false
+        },
+        {
+          "name": "service_end_date",
+          "type": "TEXT",
+          "description": "날짜 이동된 이용권 종료일",
+          "nullable": false
+        },
+        {
+          "name": "service_duration_days",
+          "type": "INTEGER",
+          "description": "이용권 제공 기간(일)",
+          "nullable": false,
+          "range": [
+            0,
+            366
+          ]
+        },
+        {
+          "name": "concurrent_watch_count",
+          "type": "INTEGER",
+          "description": "동시 시청 가능 수",
+          "nullable": false,
+          "values": [
+            1,
+            2,
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "name": "behavior_fact",
+      "kind": "fact",
+      "row_count": 457630,
+      "primary_key": [
+        "user_key",
+        "event_date",
+        "behavior_type"
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_key",
+          "references": "user_dim.user_key"
+        }
+      ],
+      "observation_window": "D0~D30",
+      "description": "앱 행동 로그의 일 단위 집계. (고객, 날짜, 행동 유형)당 1행. 가입 후 D0~D30 만 존재.",
+      "columns": [
+        {
+          "name": "user_key",
+          "type": "TEXT",
+          "description": "비식별 사용자키 (64자 해시)",
+          "nullable": false
+        },
+        {
+          "name": "event_date",
+          "type": "TEXT",
+          "description": "날짜 이동된 행동 발생일 'YYYY-MM-DD'",
+          "nullable": false,
+          "range": [
+            "2025-02-01",
+            "2025-05-01"
+          ]
+        },
+        {
+          "name": "relative_signup_day",
+          "type": "INTEGER",
+          "description": "가입일 기준 경과일 (가입 당일 = 0)",
+          "nullable": false,
+          "range": [
+            0,
+            30
+          ]
+        },
+        {
+          "name": "behavior_type",
+          "type": "TEXT",
+          "description": "표준화한 행동 유형. 탐색·결제 고민 등 그룹 정의는 semantic_layer.json의 behavior_groups 참고",
+          "nullable": false,
+          "values": [
+            "CATEGORY_VISIT",
+            "CONTENT_PURCHASE_CLICK",
+            "CONTINUOUS_AUTOPLAY",
+            "DETAIL_LIST_CLICK",
+            "DETAIL_MORE",
+            "DETAIL_PLAY_CLICK",
+            "DETAIL_ZZIM",
+            "HOME_VISIT",
+            "NEXT_EPISODE_CLICK",
+            "RECOMMEND_CONTENT_CLICK",
+            "SEARCH_CONTENT_CLICK",
+            "SEARCH_MORE_CLICK",
+            "SEARCH_OPEN",
+            "SEARCH_SUBMIT",
+            "VOUCHER_VIEW"
+          ]
+        },
+        {
+          "name": "event_count",
+          "type": "INTEGER",
+          "description": "해당 날짜·행동 유형의 발생 횟수",
+          "nullable": false,
+          "range": [
+            1,
+            446
+          ]
+        }
+      ]
+    },
+    {
+      "name": "watch_daily_fact",
+      "kind": "fact",
+      "row_count": 248522,
+      "primary_key": [
+        "user_key",
+        "watch_date",
+        "channel_type"
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_key",
+          "references": "user_dim.user_key"
+        }
+      ],
+      "observation_window": "D0~D60",
+      "description": "일별 시청 집계. (고객, 날짜, 채널 유형)당 1행. 가입 후 D0~D60 만 존재.",
+      "columns": [
+        {
+          "name": "user_key",
+          "type": "TEXT",
+          "description": "비식별 사용자키 (64자 해시)",
+          "nullable": false
+        },
+        {
+          "name": "watch_date",
+          "type": "TEXT",
+          "description": "날짜 이동된 시청일 'YYYY-MM-DD'",
+          "nullable": false
+        },
+        {
+          "name": "relative_signup_day",
+          "type": "INTEGER",
+          "description": "가입일 기준 경과일 (가입 당일 = 0)",
+          "nullable": false,
+          "range": [
+            0,
+            60
+          ]
+        },
+        {
+          "name": "channel_type",
+          "type": "TEXT",
+          "description": "시청 유형",
+          "nullable": false,
+          "values": {
+            "V": "VOD",
+            "M": "영화",
+            "L": "LIVE"
+          }
+        },
+        {
+          "name": "watch_time_raw",
+          "type": "INTEGER",
+          "description": "해당 일자·유형의 합산 시청시간 원천값. 단위 미확정이므로 원천값 그대로 사용",
+          "nullable": false
+        },
+        {
+          "name": "watch_log_count",
+          "type": "INTEGER",
+          "description": "시청 로그 수",
+          "nullable": false
+        },
+        {
+          "name": "distinct_content_count",
+          "type": "INTEGER",
+          "description": "해당 일자에 시청한 프로그램·영화·LIVE 수",
+          "nullable": false
+        },
+        {
+          "name": "active_hour_count",
+          "type": "INTEGER",
+          "description": "시청이 발생한 시간대 수 (몇 시인지는 없음)",
+          "nullable": false,
+          "range": [
+            1,
+            24
+          ]
+        },
+        {
+          "name": "has_charged_watch",
+          "type": "INTEGER",
+          "description": "유료 권한 시청 포함 여부",
+          "nullable": false,
+          "values": [
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "name": "user_content_summary",
+      "kind": "fact",
+      "row_count": 174675,
+      "primary_key": [
+        "user_key",
+        "content_key"
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_key",
+          "references": "user_dim.user_key"
+        },
+        {
+          "column": "content_key",
+          "references": "content_dim.content_key"
+        }
+      ],
+      "observation_window": "D0~D60",
+      "description": "고객 × 콘텐츠 시청 요약. 가입 후 D0~D60 누적.",
+      "columns": [
+        {
+          "name": "user_key",
+          "type": "TEXT",
+          "description": "비식별 사용자키 (64자 해시)",
+          "nullable": false
+        },
+        {
+          "name": "channel_type",
+          "type": "TEXT",
+          "description": "시청 유형 (content_dim.channel_type과 항상 일치)",
+          "nullable": false,
+          "values": {
+            "V": "VOD",
+            "M": "영화",
+            "L": "LIVE"
+          }
+        },
+        {
+          "name": "content_key",
+          "type": "TEXT",
+          "description": "콘텐츠 연결키",
+          "nullable": false
+        },
+        {
+          "name": "total_watch_time_raw",
+          "type": "INTEGER",
+          "description": "D0~D60 누적 시청시간 원천값 (단위 미확정)",
+          "nullable": false
+        },
+        {
+          "name": "watch_log_count",
+          "type": "INTEGER",
+          "description": "누적 시청 로그 수",
+          "nullable": false
+        },
+        {
+          "name": "watch_day_count",
+          "type": "INTEGER",
+          "description": "해당 콘텐츠를 시청한 날짜 수",
+          "nullable": false,
+          "range": [
+            1,
+            61
+          ]
+        },
+        {
+          "name": "first_watch_day",
+          "type": "INTEGER",
+          "description": "가입 후 해당 콘텐츠를 처음 시청한 상대일",
+          "nullable": false,
+          "range": [
+            0,
+            60
+          ]
+        },
+        {
+          "name": "last_watch_day",
+          "type": "INTEGER",
+          "description": "가입 후 해당 콘텐츠를 마지막으로 시청한 상대일",
+          "nullable": false,
+          "range": [
+            0,
+            60
+          ]
+        },
+        {
+          "name": "has_charged_watch",
+          "type": "INTEGER",
+          "description": "유료 권한 시청 포함 여부",
+          "nullable": false,
+          "values": [
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "name": "content_dim",
+      "kind": "dimension",
+      "row_count": 13532,
+      "primary_key": [
+        "content_key"
+      ],
+      "foreign_keys": [],
+      "observation_window": null,
+      "description": "프로그램·영화·LIVE 콘텐츠 정보. 콘텐츠당 1행.",
+      "columns": [
+        {
+          "name": "content_key",
+          "type": "TEXT",
+          "description": "콘텐츠 연결키",
+          "nullable": false
+        },
+        {
+          "name": "channel_type",
+          "type": "TEXT",
+          "description": "콘텐츠 유형",
+          "nullable": false,
+          "values": {
+            "V": "VOD",
+            "M": "영화",
+            "L": "LIVE"
+          }
+        },
+        {
+          "name": "content_id",
+          "type": "TEXT",
+          "description": "원천 콘텐츠 ID (LIVE는 전부 NULL)",
+          "nullable": true
+        },
+        {
+          "name": "program_id",
+          "type": "TEXT",
+          "description": "원천 프로그램 ID (유형에 따라 NULL 가능, 2건 NULL)",
+          "nullable": true
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "description": "콘텐츠 또는 프로그램 제목",
+          "nullable": true
+        },
+        {
+          "name": "channel_id",
+          "type": "TEXT",
+          "description": "채널 ID",
+          "nullable": true
+        },
+        {
+          "name": "channel_name",
+          "type": "TEXT",
+          "description": "채널명",
+          "nullable": true
+        },
+        {
+          "name": "section",
+          "type": "TEXT",
+          "description": "원천 콘텐츠 분류 (값은 'vod' 하나, 나머지 NULL)",
+          "nullable": true
+        },
+        {
+          "name": "target_age",
+          "type": "INTEGER",
+          "description": "시청 등급 또는 대상 연령",
+          "nullable": true,
+          "values": [
+            0,
+            7,
+            12,
+            15,
+            18,
+            19
+          ]
+        }
+      ]
+    },
+    {
+      "name": "content_genre_bridge",
+      "kind": "bridge",
+      "row_count": 41203,
+      "primary_key": [
+        "content_key",
+        "genre_source",
+        "genre_code"
+      ],
+      "foreign_keys": [
+        {
+          "column": "content_key",
+          "references": "content_dim.content_key"
+        }
+      ],
+      "observation_window": null,
+      "description": "콘텐츠와 다중 장르 연결. 한 콘텐츠가 여러 장르를 가질 수 있다.",
+      "columns": [
+        {
+          "name": "content_key",
+          "type": "TEXT",
+          "description": "콘텐츠 연결키",
+          "nullable": false
+        },
+        {
+          "name": "genre_code",
+          "type": "TEXT",
+          "description": "원천 장르 코드",
+          "nullable": false
+        },
+        {
+          "name": "genre_name",
+          "type": "TEXT",
+          "description": "장르명",
+          "nullable": false
+        },
+        {
+          "name": "genre_source",
+          "type": "TEXT",
+          "description": "장르를 가져온 원천 분류",
+          "nullable": false,
+          "values": {
+            "VOD_SERIES_GENRE": "VOD 프로그램 장르",
+            "MOVIE_GENRE": "영화 장르",
+            "LIVE_CHANNEL_GENRE": "LIVE 채널 장르"
+          }
+        }
+      ]
+    },
+    {
+      "name": "user_journey",
+      "kind": "derived",
+      "row_count": 50000,
+      "primary_key": [
+        "user_key"
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_key",
+          "references": "user_dim.user_key"
+        }
+      ],
+      "observation_window": null,
+      "description": "대시보드 고객 여정 정의를 재현한 파생 테이블. 고객 1명당 1행.",
+      "columns": [
+        {
+          "name": "user_key",
+          "type": "TEXT",
+          "description": "비식별 사용자키 (64자 해시)",
+          "nullable": false
+        },
+        {
+          "name": "signup_date",
+          "type": "TEXT",
+          "description": "user_dim.signup_date 복사",
+          "nullable": false
+        },
+        {
+          "name": "signup_device_type",
+          "type": "TEXT",
+          "description": "user_dim.signup_device_type 복사",
+          "nullable": false
+        },
+        {
+          "name": "age_band",
+          "type": "TEXT",
+          "description": "user_dim.age_band 복사",
+          "nullable": false
+        },
+        {
+          "name": "push_opt_in_current",
+          "type": "INTEGER",
+          "description": "user_dim.push_opt_in_current 복사",
+          "nullable": false
+        },
+        {
+          "name": "explored",
+          "type": "INTEGER",
+          "description": "D0~D30 능동 탐색 행동(SEARCH_*, CATEGORY_VISIT, DETAIL_*, RECOMMEND_CONTENT_CLICK) 1건 이상",
+          "nullable": false,
+          "values": [
+            0,
+            1
+          ],
+          "reference_count": 30121
+        },
+        {
+          "name": "voucher_viewed",
+          "type": "INTEGER",
+          "description": "D0~D30 VOUCHER_VIEW 1건 이상",
+          "nullable": false,
+          "values": [
+            0,
+            1
+          ],
+          "reference_count": 28651
+        },
+        {
+          "name": "first_pay_day",
+          "type": "INTEGER",
+          "description": "첫 결제(payment_order = 1)의 relative_signup_day. 결제 없으면 NULL",
+          "nullable": true,
+          "range": [
+            0,
+            90
+          ]
+        },
+        {
+          "name": "paid_d30",
+          "type": "INTEGER",
+          "description": "first_pay_day가 0~30",
+          "nullable": false,
+          "values": [
+            0,
+            1
+          ],
+          "reference_count": 12468
+        },
+        {
+          "name": "first_product_family",
+          "type": "TEXT",
+          "description": "첫 결제 상품군 (semantic_layer.json product_family 규칙). 결제 없으면 '없음'",
+          "nullable": false
+        },
+        {
+          "name": "is_auto_payment",
+          "type": "INTEGER",
+          "description": "첫 결제의 자동결제 여부. 결제 없으면 NULL",
+          "nullable": true,
+          "values": [
+            0,
+            1
+          ]
+        },
+        {
+          "name": "watch_days_d7_after_pay",
+          "type": "INTEGER",
+          "description": "첫 결제일~+7일 고유 시청일 수",
+          "nullable": false,
+          "range": [
+            0,
+            8
+          ]
+        },
+        {
+          "name": "initial_watch",
+          "type": "INTEGER",
+          "description": "paid_d30 AND watch_days_d7_after_pay >= 2",
+          "nullable": false,
+          "values": [
+            0,
+            1
+          ],
+          "reference_count": 7983
+        },
+        {
+          "name": "retained_d22_28",
+          "type": "INTEGER",
+          "description": "paid_d30 AND 결제 후 D+22~28 시청 AND 결제 후 D+0~21 시청",
+          "nullable": false,
+          "values": [
+            0,
+            1
+          ],
+          "reference_count": 5967
+        },
+        {
+          "name": "search_cnt",
+          "type": "INTEGER",
+          "description": "D0~D30 SEARCH_* event_count 합계",
+          "nullable": false
+        },
+        {
+          "name": "play_click_cnt",
+          "type": "INTEGER",
+          "description": "D0~D30 DETAIL_PLAY_CLICK event_count 합계",
+          "nullable": false
+        },
+        {
+          "name": "zzim_cnt",
+          "type": "INTEGER",
+          "description": "D0~D30 DETAIL_ZZIM event_count 합계",
+          "nullable": false
+        },
+        {
+          "name": "voucher_view_cnt",
+          "type": "INTEGER",
+          "description": "D0~D30 VOUCHER_VIEW event_count 합계",
+          "nullable": false
+        },
+        {
+          "name": "watch_days_d0_60",
+          "type": "INTEGER",
+          "description": "D0~D60 고유 시청일 수",
+          "nullable": false,
+          "range": [
+            0,
+            61
+          ]
+        }
+      ]
+    }
+  ],
+  "rules": [
+    "통화가 다른 금액은 합산하지 말고 currency_type_id별로 집계한다.",
+    "watch_time_raw, total_watch_time_raw는 단위가 확정되지 않았으므로 원천값 그대로 사용한다.",
+    "payment_order > 1은 추가 결제이며 자동 갱신이 아니다.",
+    "gender_code는 성별로 해석하지 않는다.",
+    "push_opt_in_current는 데이터 추출 시점의 상태다.",
+    "테이블별 관측 기간 밖의 조건은 데이터가 없다고 답한다.",
+    "데이터 범위 밖의 개념은 임의로 정의하지 않고 데이터의 한계로 설명한다."
+  ],
+  "data_quality_notes": [
+    "content_dim에 content_key = 'LIVE|'(program_id 없음) 행이 있다.",
+    "content_dim.section은 'vod' 한 값과 NULL만 있어 분류 기준으로 쓰기 어렵다.",
+    "payment_fact.discount_amount는 모두 0이다.",
+    "결제 기록 없이 유료 권한 시청 기록이 있는 고객이 있다 (제휴·외부 권한 가능성)."
+  ]
+}

@@ -1,0 +1,271 @@
+{
+  "about": "통합웹 보정: 팀 2-2 시맨틱 레이어(semantic_layer.json)를 대시보드 v9 · 발표 PDF 숫자에 맞춘다. export3.mjs 가 시맨틱 정의를 만든 뒤 patch(필드 덮어쓰기) → add(정의 추가) 순서로 적용한다.",
+  "patch": {
+    "metric.retention_rate_dashboard": {
+      "description": "D+30 이내 첫 결제 고객 중 결제 후 D+22~28(4주차)에 시청 기록이 있는 고객 비율. 대시보드 '지속 시청' 카드의 'D+22~28 시청 유지율' KPI.",
+      "columns": [
+        "user_journey.paid_d30",
+        "user_journey.watched_d22_28_after_pay"
+      ],
+      "formula": "결제 후 D+22~28 시청 고객 수 ÷ D+30 첫 결제 고객 수",
+      "numerator": "watched_d22_28_after_pay = 1 인 고객 수 (6,103명)",
+      "denominator": "paid_d30 = 1 인 고객 수 (12,468명)",
+      "period": "가입 후 D+30 이내 첫 결제 → 첫 결제일 기준 D+22~28",
+      "grain": "고객",
+      "unit": "%",
+      "filters": [
+        "paid_d30 = 1"
+      ],
+      "sql": {
+        "expression": "1.0 * SUM(CASE WHEN watched_d22_28_after_pay = 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)",
+        "where": "paid_d30 = 1"
+      },
+      "example_sql": "SELECT COUNT(*) AS paid_users, SUM(CASE WHEN watched_d22_28_after_pay = 1 THEN 1 ELSE 0 END) AS watched_d22_28_users, ROUND(100.0 * SUM(CASE WHEN watched_d22_28_after_pay = 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) AS retention_rate_dashboard_pct FROM user_journey WHERE paid_d30 = 1",
+      "cautions": [
+        "대시보드·발표 PDF 기준 48.9% (6,103 ÷ 12,468)",
+        "분자는 4주차(D+22~28) 시청만 본다. D+0~21 시청 이력까지 요구하는 '지속 시청 (대시보드 기준)' 5,967명(47.9%)과 다르다",
+        "D+30 이후 첫 결제(465명)는 분모에서 제외"
+      ]
+    },
+    "term.step_retained_d22_28": {
+      "cautions": [
+        "첫 결제 고객 기준 5,967명 (초기 시청 성공 여부 무관, 순차 퍼널 아님)",
+        "대시보드 첫 화면·퍼널의 '4주 지속 시청 고객'은 앞 단계를 모두 거친 순차 기준 4,009명이다 (term.funnel_sustained_dashboard)",
+        "retained_after_activation과 분모가 다르므로 질문이 기준을 정하지 않으면 두 값을 구분해서 답한다."
+      ]
+    },
+    "term.step_retained_after_activation": {
+      "cautions": [
+        "초기 시청 성공 고객 기준 5,088명 (1-2 분석 정의)",
+        "대시보드 첫 화면·퍼널의 '4주 지속 시청 고객'은 탐색·이용권 관심까지 거친 순차 기준 4,009명이다 (term.funnel_sustained_dashboard)"
+      ]
+    },
+    "metric.activation_fail_rate": {
+      "cautions": [
+        "발표 PDF 기준 36.0% (4,485 ÷ 12,468) — 첫 결제일~+7일 고유 시청일 0~1일",
+        "대시보드 '초기 시청 실패' 카드의 20.6%(2,571명)는 결제 후 7일간 한 번도 보지 않은 고객(초기 미시청률, metric.initial_no_watch_rate)이다"
+      ]
+    },
+    "metric.channel_usage_rate": {
+      "sql": {
+        "expressions": {
+          "vod_pct": "1.0 * SUM(used_vod_28d) / NULLIF(COUNT(*), 0)",
+          "movie_pct": "1.0 * SUM(used_movie_28d) / NULLIF(COUNT(*), 0)",
+          "live_pct": "1.0 * SUM(used_live_28d) / NULLIF(COUNT(*), 0)"
+        },
+        "where": "paid_d30 = 1",
+        "raw": "watch_daily_fact.channel_type IN ('V','M','L')"
+      }
+    },
+    "metric.avg_watch_time": {
+      "tables": [
+        "user_journey",
+        "watch_daily_fact"
+      ]
+    },
+    "term.candidate_unanchored_heavy": {
+      "example_sql": "SELECT COUNT(*) AS users, SUM(first_pay_day IS NULL) AS never_paid FROM user_journey WHERE watch_days_d0_60 >= 4 AND ever_auto_payment = 0"
+    }
+  },
+  "add": [
+    {
+      "id": "term.funnel_sustained_dashboard",
+      "type": "business_term",
+      "name": "4주 지속 시청 고객 (대시보드 퍼널)",
+      "aliases": [
+        "4주 지속 시청 고객",
+        "4주 지속 시청",
+        "퍼널 지속 시청",
+        "퍼널 마지막 단계",
+        "대시보드 지속 시청 고객"
+      ],
+      "description": "대시보드 첫 화면과 퍼널 마지막 단계의 고객. 앞 단계를 모두 거친 고객만 센다(순차 기준): 능동 탐색 AND 이용권 관심 AND D+30 이내 첫 결제 AND 초기 시청 성공(첫 결제일~+7일 2일 이상) AND 결제 후 D+22~28 시청 AND D+0~21 시청.",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.explored",
+        "user_journey.voucher_viewed",
+        "user_journey.paid_d30",
+        "user_journey.initial_watch",
+        "user_journey.retained_d22_28"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "condition": "explored = 1 AND voucher_viewed = 1 AND paid_d30 = 1 AND initial_watch = 1 AND retained_d22_28 = 1"
+      },
+      "formula": "-",
+      "numerator": "-",
+      "denominator": "가입 고객",
+      "grain": "고객",
+      "period": "탐색·이용권 관심·결제 D0~D30 → 결제 후 D+0~28",
+      "filters": [],
+      "unit": "명",
+      "null_handling": "결제하지 않은 고객은 initial_watch · retained_d22_28 이 0 이므로 자동 제외",
+      "cautions": [
+        "대시보드 기준 4,009명 (가입 50,000명 중 8.0%)",
+        "순차 기준이 아닌 '지속 시청 (대시보드 기준)' 5,967명, 초기 시청 성공 기준 '지속 시청 고객' 5,088명과 다르다"
+      ],
+      "actions": [
+        "퍼널 병목(직전 단계 대비 전환율이 가장 낮은 구간)부터 개선 캠페인 설계"
+      ],
+      "example_sql": "SELECT COUNT(*) AS customers, SUM(push_opt_in_current) AS push_reachable, ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM user_journey), 1) AS share_of_signups_pct FROM user_journey WHERE explored = 1 AND voucher_viewed = 1 AND paid_d30 = 1 AND initial_watch = 1 AND retained_d22_28 = 1"
+    },
+    {
+      "id": "metric.funnel_dashboard",
+      "type": "metric",
+      "name": "고객 여정 퍼널 (대시보드 순차 기준)",
+      "aliases": [
+        "고객 여정 퍼널",
+        "퍼널",
+        "퍼널 단계별 고객 수",
+        "단계별 전환",
+        "퍼널 병목",
+        "퍼널 전환율"
+      ],
+      "description": "대시보드 '퍼널 병목 구간'과 같은 6단계 순차 퍼널: 가입 → 탐색 → 이용권 관심 → 첫 결제 → 초기 시청 → 지속 시청. 각 단계는 앞 단계를 모두 거친 고객만 포함하고, 직전 단계 대비 전환율을 함께 보여 준다.",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.explored",
+        "user_journey.voucher_viewed",
+        "user_journey.paid_d30",
+        "user_journey.initial_watch",
+        "user_journey.retained_d22_28"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "expressions": {
+          "s1_explored": "SUM(explored = 1)",
+          "s2_voucher_viewed": "SUM(explored = 1 AND voucher_viewed = 1)",
+          "s3_paid_d30": "SUM(explored = 1 AND voucher_viewed = 1 AND paid_d30 = 1)",
+          "s4_initial_watch": "SUM(explored = 1 AND voucher_viewed = 1 AND paid_d30 = 1 AND initial_watch = 1)",
+          "s5_sustained": "SUM(explored = 1 AND voucher_viewed = 1 AND paid_d30 = 1 AND initial_watch = 1 AND retained_d22_28 = 1)"
+        },
+        "note": "각 단계는 앞 단계 조건을 모두 포함(순차). 직전 단계 대비 전환율 = 해당 단계 ÷ 직전 단계"
+      },
+      "formula": "단계별 고객 수, 전환율 = 해당 단계 고객 수 ÷ 직전 단계 고객 수",
+      "numerator": "해당 단계 고객 수",
+      "denominator": "직전 단계 고객 수",
+      "grain": "고객",
+      "period": "탐색·이용권 관심·결제 D0~D30 → 초기 시청 결제일~+7일 → 지속 시청 결제 후 D+22~28",
+      "filters": [],
+      "unit": "명",
+      "null_handling": "직전 단계가 0명이면 전환율 NULL",
+      "cautions": [
+        "대시보드 기준 50,000 → 30,121 → 20,538 → 8,970 → 6,371 → 4,009명",
+        "순차 기준이라 단계별 단독 지표(탐색률 60.2%, 이용권 방문률 57.3%, D+30 결제 24.9% 등)와 분모가 다르다"
+      ],
+      "actions": [
+        "직전 단계 대비 전환율이 가장 낮은 구간을 우선 개선"
+      ],
+      "example_sql": "WITH f AS (SELECT COUNT(*) AS s0, SUM(explored = 1) AS s1, SUM(explored = 1 AND voucher_viewed = 1) AS s2, SUM(explored = 1 AND voucher_viewed = 1 AND paid_d30 = 1) AS s3, SUM(explored = 1 AND voucher_viewed = 1 AND paid_d30 = 1 AND initial_watch = 1) AS s4, SUM(explored = 1 AND voucher_viewed = 1 AND paid_d30 = 1 AND initial_watch = 1 AND retained_d22_28 = 1) AS s5 FROM user_journey) SELECT 1 AS step_no, '가입' AS step, s0 AS customers, NULL AS conv_from_prev_pct FROM f UNION ALL SELECT 2, '탐색', s1, ROUND(100.0 * s1 / NULLIF(s0, 0), 1) FROM f UNION ALL SELECT 3, '이용권 관심', s2, ROUND(100.0 * s2 / NULLIF(s1, 0), 1) FROM f UNION ALL SELECT 4, '첫 결제', s3, ROUND(100.0 * s3 / NULLIF(s2, 0), 1) FROM f UNION ALL SELECT 5, '초기 시청', s4, ROUND(100.0 * s4 / NULLIF(s3, 0), 1) FROM f UNION ALL SELECT 6, '지속 시청', s5, ROUND(100.0 * s5 / NULLIF(s4, 0), 1) FROM f"
+    },
+    {
+      "id": "metric.pay_rate_by_day",
+      "type": "metric",
+      "name": "D+7·D+14·D+30 첫 결제 전환율",
+      "aliases": [
+        "D+7 결제 전환율",
+        "D+14 결제 전환율",
+        "D+7 결제율",
+        "D+14 결제율",
+        "D+N 결제 전환율",
+        "첫 결제 전환율",
+        "기간별 결제 전환율"
+      ],
+      "description": "가입 고객 중 가입 후 D+7 · D+14 · D+30 이내에 첫 결제한 고객 비율. 대시보드 '이용권 관심 · 첫 결제' 카드의 '첫 결제 전환율'.",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.first_pay_day"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "expressions": {
+          "pay_rate_d7_pct": "1.0 * SUM(first_pay_day BETWEEN 0 AND 7) / NULLIF(COUNT(*), 0)",
+          "pay_rate_d14_pct": "1.0 * SUM(first_pay_day BETWEEN 0 AND 14) / NULLIF(COUNT(*), 0)",
+          "pay_rate_d30_pct": "1.0 * SUM(first_pay_day BETWEEN 0 AND 30) / NULLIF(COUNT(*), 0)"
+        }
+      },
+      "formula": "가입 후 D+N 이내 첫 결제 고객 수 ÷ 가입 고객 수 (N = 7, 14, 30)",
+      "numerator": "first_pay_day BETWEEN 0 AND N 인 고객 수 (D+7 12,015명 · D+30 12,468명)",
+      "denominator": "가입 고객 수 (50,000명)",
+      "grain": "고객",
+      "period": "가입 후 D+0~D+7 / D+14 / D+30",
+      "filters": [],
+      "unit": "%",
+      "null_handling": "결제하지 않은 고객은 first_pay_day 가 NULL 이라 분자에서 빠지고 분모에는 남는다",
+      "cautions": [
+        "대시보드 기준 D+7 24.0% · D+14 24.4% · D+30 24.9%",
+        "D+30 단독 지표는 metric.pay_rate_d30 과 같다"
+      ],
+      "actions": [
+        "가입 첫 주 결제 비중이 크므로(D+30 결제자의 96%) 가입 직후 이용권 안내 강화"
+      ],
+      "example_sql": "SELECT COUNT(*) AS signups, ROUND(100.0 * SUM(first_pay_day BETWEEN 0 AND 7) / COUNT(*), 1) AS pay_rate_d7_pct, ROUND(100.0 * SUM(first_pay_day BETWEEN 0 AND 14) / COUNT(*), 1) AS pay_rate_d14_pct, ROUND(100.0 * SUM(first_pay_day BETWEEN 0 AND 30) / COUNT(*), 1) AS pay_rate_d30_pct FROM user_journey"
+    },
+    {
+      "id": "metric.post_pay_active_rate",
+      "type": "metric",
+      "name": "결제 후 시청 활성화율 (D+7·D+14·D+28)",
+      "aliases": [
+        "결제 후 시청 활성화율",
+        "결제 후 D+7 시청 활성화율",
+        "D+7 시청 활성화율",
+        "D+14 시청 활성화율",
+        "D+28 시청 활성화율",
+        "결제 후 활성화율",
+        "결제 후 D+7 활성"
+      ],
+      "description": "D+30 이내 첫 결제 고객 중 첫 결제일부터 7 · 14 · 28일 안에 시청 기록이 하루라도 있는 고객 비율. 대시보드 '초기 시청' 카드의 '결제 후 시청 활성화율'.",
+      "tables": [
+        "user_journey"
+      ],
+      "columns": [
+        "user_journey.paid_d30",
+        "user_journey.active_d7_after_pay",
+        "user_journey.active_d14_after_pay",
+        "user_journey.active_d28_after_pay"
+      ],
+      "join_keys": [
+        "user_key"
+      ],
+      "sql": {
+        "expressions": {
+          "active_d7_pct": "1.0 * SUM(active_d7_after_pay = 1) / NULLIF(COUNT(*), 0)",
+          "active_d14_pct": "1.0 * SUM(active_d14_after_pay = 1) / NULLIF(COUNT(*), 0)",
+          "active_d28_pct": "1.0 * SUM(active_d28_after_pay = 1) / NULLIF(COUNT(*), 0)"
+        },
+        "where": "paid_d30 = 1"
+      },
+      "formula": "첫 결제일~+N일 시청 고객 수 ÷ D+30 첫 결제 고객 수 (N = 7, 14, 28)",
+      "numerator": "active_dN_after_pay = 1 인 고객 수",
+      "denominator": "paid_d30 = 1 인 고객 수 (12,468명)",
+      "grain": "고객",
+      "period": "가입 후 D+30 이내 첫 결제 → 첫 결제일~+7 / +14 / +28일",
+      "filters": [
+        "paid_d30 = 1"
+      ],
+      "unit": "%",
+      "null_handling": "결제하지 않은 고객은 active_dN_after_pay 가 NULL 이라 분모에서 제외",
+      "cautions": [
+        "대시보드 기준 D+7 79.4% · D+14 82.8% · D+28 85.6%",
+        "하루라도 보면 활성으로 센다. 첫 주 2일 이상 보는 '초기 시청 성공률'(64.0%)과 다르다",
+        "1 − D+7 활성화율 = 초기 미시청률 20.6%"
+      ],
+      "actions": [
+        "결제 후 첫 주에 시청이 없는 고객에게 이어보기·추천 푸시"
+      ],
+      "example_sql": "SELECT COUNT(*) AS paid_users, ROUND(100.0 * SUM(active_d7_after_pay = 1) / COUNT(*), 1) AS active_d7_pct, ROUND(100.0 * SUM(active_d14_after_pay = 1) / COUNT(*), 1) AS active_d14_pct, ROUND(100.0 * SUM(active_d28_after_pay = 1) / COUNT(*), 1) AS active_d28_pct FROM user_journey WHERE paid_d30 = 1"
+    }
+  ]
+}

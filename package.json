@@ -1,0 +1,17 @@
+{
+  "name": "ajouney_nl2sql_agent",
+  "private": true,
+  "version": "1.0.0",
+  "description": "OTT AJOU 고객 여정 대시보드 + 시맨틱 레이어 기반 NL2SQL 에이전트(브라우저 SQLite · 하네스 검증)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "build:db": "node --no-warnings scripts/build-db.mjs",
+    "build:data": "node --no-warnings scripts/export-data.mjs",
+    "build": "node scripts/build.mjs",
+    "serve": "node scripts/serve.mjs",
+    "test": "node --no-warnings --test tests/*.test.cjs"
+  }
+}

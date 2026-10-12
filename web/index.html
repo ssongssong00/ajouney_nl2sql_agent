@@ -1,0 +1,101 @@
+<title>Ajouney+ 고객 여정 에이전트</title>
+<style>
+/*@APP_CSS@*/
+/* 레이아웃: 대시보드(전체 화면) + 오른쪽 AI 에이전트 패널. 넓은 화면은 나란히, 좁은 화면은 겹쳐서 연다 */
+:root{--panel-w:440px;--panel-wide:720px;--tab-fg:#fff}
+html,body{height:100%}
+body{overflow:hidden}
+.shell{display:flex;height:100%;min-height:0}
+.dash-frame{flex:1;min-width:0;height:100%;border:none;display:block;background:var(--bg)}
+.agent{width:var(--panel-w);flex:none;height:100%;display:flex;flex-direction:column;background:var(--g50);border-left:1px solid var(--line);min-width:0}
+.agent.wide{width:var(--panel-wide)}
+.agent-h{display:flex;align-items:center;gap:10px;padding:12px 14px 12px 18px;background:var(--card);border-bottom:1px solid var(--line)}
+.agent-h .t{flex:1;min-width:0}
+.agent-h .t b{display:block;font-size:15.5px;letter-spacing:-.02em}
+.agent-h .t span{font-size:12px;color:var(--g600)}
+.icon-btn{border:none;background:none;border-radius:8px;width:32px;height:32px;display:grid;place-items:center;color:var(--g600);font-size:17px;line-height:1}
+.icon-btn:hover{background:var(--g100);color:var(--g900)}
+.agent-body{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:16px 14px;min-height:0}
+.agent .chat{gap:12px}
+.agent .a-card{padding:14px 15px}
+.agent .grid.g2{grid-template-columns:1fr}
+.agent .kpis{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+.agent .basis{grid-template-columns:88px 1fr}
+.agent .q-bubble{max-width:88%}
+.welcome h2{font-size:17px;margin:0 0 4px;letter-spacing:-.02em;text-wrap:balance}
+.welcome p{margin:0 0 12px;color:var(--g600);font-size:13px}
+.welcome .grp{font-size:12px;font-weight:700;color:var(--g500);margin:12px 0 6px;letter-spacing:.02em}
+.welcome .chips{flex-direction:column;align-items:stretch}
+.welcome .chip{text-align:left;border-radius:12px;padding:8px 12px;line-height:1.45}
+.agent-foot{padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));background:var(--card);border-top:1px solid var(--line)}
+.agent-foot form{display:flex;gap:8px}
+.agent-foot input{font-size:16px;padding:10px 12px}
+.agent-foot .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.agent-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:20;border:none;background:var(--blue);color:var(--tab-fg);writing-mode:vertical-rl;padding:16px 9px;border-radius:12px 0 0 12px;font-weight:700;font-size:13.5px;letter-spacing:.04em;box-shadow:0 4px 18px rgba(0,29,58,.18);display:flex;align-items:center;gap:8px}
+.agent-tab:hover{background:var(--blue-strong)}
+.agent-tab .spark{writing-mode:horizontal-tb;font-size:15px}
+/* 패널 탭: 챗봇 · 하네스 모니터링 */
+.seg{display:inline-flex;gap:2px;background:var(--g100);border-radius:10px;padding:3px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.seg button{border:none;background:none;border-radius:8px;padding:6px 11px;font-size:13.5px;font-weight:700;color:var(--g600);white-space:nowrap}
+.seg button:hover{color:var(--g900)}
+.seg button[aria-selected=true]{background:var(--card);color:var(--g900);box-shadow:var(--shadow)}
+.agent-h .sp{flex:1}
+.agent-view{flex:1;min-height:0;display:flex;flex-direction:column}
+.mon-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px 14px 24px;display:grid;gap:14px;align-content:start}
+.mon-body>*{min-width:0}
+.mon-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mon-bar .note{flex:1;min-width:160px;font-size:12px;color:var(--g600)}
+.agent .stat-cards{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.agent .stat{padding:10px 12px}
+.agent .stat .l{font-size:12px;line-height:1.35}
+.agent .stat .v{font-size:22px}
+.mon-detail h3{font-size:13.5px;margin:16px 0 6px;color:var(--g800)}
+.mon-detail h3:first-of-type{margin-top:4px}
+.mon-detail .basis{grid-template-columns:96px 1fr}
+pre.fb{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:4px 0;white-space:pre-wrap;word-break:break-word;font-size:12px}
+.repair{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0;background:var(--card-sub)}
+@media (max-width:1099px){.agent,.agent.wide{position:fixed;top:0;right:0;bottom:0;z-index:30;width:min(var(--panel-w),100%);box-shadow:-8px 0 30px rgba(0,29,58,.16)}.agent.wide{width:min(var(--panel-wide),100%)}}
+@media (max-width:640px){.agent,.agent.wide{width:100%;border-left:none}#agent-wide{display:none}.agent .stat-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+<div class="shell">
+  <iframe class="dash-frame" id="dash-frame" title="OTT AJOU 고객 여정 대시보드" src="dashboard.html"></iframe>
+  <aside class="agent" id="agent" aria-label="AI 에이전트" hidden>
+    <header class="agent-h">
+      <div class="seg" role="tablist" aria-label="에이전트 화면">
+        <button type="button" role="tab" id="tab-chat" aria-controls="view-chat" aria-selected="true" data-tab="chat">챗봇</button>
+        <button type="button" role="tab" id="tab-mon" aria-controls="view-mon" aria-selected="false" data-tab="mon">하네스 모니터링</button>
+      </div>
+      <span class="sp"></span>
+      <button type="button" class="icon-btn" id="agent-reset" title="새 대화" aria-label="새 대화">↺</button>
+      <button type="button" class="icon-btn" id="agent-wide" title="패널 넓게" aria-label="패널 넓게" aria-pressed="false">⇔</button>
+      <button type="button" class="icon-btn" id="agent-close" title="닫기" aria-label="에이전트 닫기">✕</button>
+    </header>
+    <div class="agent-view" id="view-chat" role="tabpanel" aria-labelledby="tab-chat">
+      <div class="agent-body" id="chat-scroll"><div class="chat" id="chat-list"></div></div>
+      <div class="agent-foot">
+        <form id="chat-form" autocomplete="off"><input type="text" id="chat-input" class="grow" placeholder="예: 20대 고객의 초기 미시청률은?" aria-label="질문"><button class="btn primary" id="chat-send" type="submit">보내기</button></form>
+        <div class="meta" id="pills"></div>
+      </div>
+    </div>
+    <div class="agent-view" id="view-mon" role="tabpanel" aria-labelledby="tab-mon" hidden>
+      <div class="mon-body">
+        <div class="mon-bar">
+          <button class="btn primary sm" id="mon-test" type="button" disabled>테스트 실행</button>
+          <button class="btn sm" id="mon-test-dl" type="button" hidden>테스트 결과 내려받기</button>
+          <button class="btn sm" id="mon-log-dl" type="button" hidden>로그 파일 내려받기</button>
+          <span class="note" id="mon-src"></span>
+        </div>
+        <div class="stat-cards" id="mon-stats"></div>
+        <p class="small muted" id="mon-other" style="margin:-6px 0 0"></p>
+        <div class="card" id="mon-tests" hidden></div>
+        <div class="card"><h2>실행 이력</h2><div id="mon-list"></div></div>
+        <div class="card mon-detail" id="mon-detail"></div>
+      </div>
+    </div>
+  </aside>
+</div>
+<button type="button" class="agent-tab" id="agent-tab" aria-controls="agent" aria-expanded="false"><span class="spark">✦</span>AI 에이전트</button>
+<script src="js/ui/common.js"></script>
+<script src="js/ui/chat.js"></script>
+<script src="js/ui/monitor.js"></script>
+<script src="js/ui/main.js"></script>

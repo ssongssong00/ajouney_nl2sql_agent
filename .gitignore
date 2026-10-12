@@ -1,0 +1,11 @@
+# 고객 데이터와 빌드 산출물은 올리지 않는다 (npm run build:db → build:data → build 로 재생성)
+data/csv/
+# 팀 대시보드 번들에는 고객 키 5만 개가 내장돼 있어 올리지 않는다 (직접 web/dashboard.html 에 넣고 빌드)
+web/dashboard.html
+.build/
+dist/
+node_modules/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store

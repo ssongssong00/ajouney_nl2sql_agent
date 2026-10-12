@@ -1,0 +1,436 @@
+{
+  "name": "ajouney_semantic_layer",
+  "version": "1.0.0",
+  "description": "OTT 신규 가입 고객 여정 분석용 시맨틱 레이어. NL2SQL 에이전트가 자연어 용어를 SQL로 바꿀 때 참조하는 정의 모음. 물리 테이블 구조는 metadata.json을 따른다.",
+  "dialect": "sqlite",
+  "conventions": {
+    "day_reference": "relative_signup_day: 가입일 = 0. 결제 기준 기간은 (시청일의 relative_signup_day − 첫 결제의 relative_signup_day)로 계산한다.",
+    "user_count": "고객 수는 항상 COUNT(DISTINCT user_key)로 센다. 장르 조인 시 행이 장르 수만큼 늘어나기 때문.",
+    "observation_window": {
+      "behavior_fact": "D0~D30",
+      "watch_daily_fact": "D0~D60",
+      "user_content_summary": "D0~D60",
+      "payment_fact": "D0~D90"
+    },
+    "guardrails": [
+      "통화가 다른 금액은 합산하지 않는다. currency_type_id별로 따로 집계한다.",
+      "watch_time_raw는 단위가 확정되지 않았으므로 원천값 그대로 사용한다.",
+      "payment_order > 1은 추가 결제이며 자동 갱신이 아니다.",
+      "gender_code는 성별로 해석하지 않는다.",
+      "push_opt_in_current는 데이터 추출 시점의 상태다.",
+      "관측 기간 밖의 질문(예: 행동 D45)은 데이터가 없다고 답한다."
+    ]
+  },
+  "entities": {
+    "user": {
+      "label": "고객",
+      "table": "user_dim",
+      "key": "user_key",
+      "description": "가입 고객 50,000명. 모든 비율의 기본 분모."
+    },
+    "content": {
+      "label": "콘텐츠",
+      "table": "content_dim",
+      "key": "content_key",
+      "description": "VOD는 프로그램 단위, 영화는 작품 단위, LIVE는 채널 프로그램 단위."
+    }
+  },
+  "behavior_groups": {
+    "app_entry": {
+      "label": "앱 진입",
+      "types": [
+        "HOME_VISIT"
+      ],
+      "is_explore": false,
+      "note": "앱을 켜면 자동으로 기록되므로 탐색에서 제외"
+    },
+    "active_explore": {
+      "label": "능동 탐색",
+      "synonyms": [
+        "탐색",
+        "탐색 행동",
+        "콘텐츠 탐색"
+      ],
+      "types": [
+        "SEARCH_OPEN",
+        "SEARCH_SUBMIT",
+        "SEARCH_CONTENT_CLICK",
+        "SEARCH_MORE_CLICK",
+        "CATEGORY_VISIT",
+        "DETAIL_MORE",
+        "DETAIL_LIST_CLICK",
+        "DETAIL_ZZIM",
+        "RECOMMEND_CONTENT_CLICK",
+        "DETAIL_PLAY_CLICK"
+      ],
+      "is_explore": true,
+      "note": "볼 콘텐츠를 찾으려고 검색하고, 둘러보고, 눌러본 행동"
+    },
+    "purchase_consider": {
+      "label": "결제 고민",
+      "types": [
+        "VOUCHER_VIEW",
+        "CONTENT_PURCHASE_CLICK"
+      ],
+      "is_explore": false
+    },
+    "in_watch": {
+      "label": "시청 중 행동",
+      "types": [
+        "CONTINUOUS_AUTOPLAY",
+        "NEXT_EPISODE_CLICK"
+      ],
+      "is_explore": false,
+      "note": "이미 시청 중에 발생. 연속 재생은 사용자가 누른 행동이 아님"
+    },
+    "search": {
+      "label": "검색",
+      "parent": "active_explore",
+      "types": [
+        "SEARCH_OPEN",
+        "SEARCH_SUBMIT",
+        "SEARCH_CONTENT_CLICK",
+        "SEARCH_MORE_CLICK"
+      ]
+    },
+    "detail": {
+      "label": "상세",
+      "parent": "active_explore",
+      "types": [
+        "DETAIL_MORE",
+        "DETAIL_LIST_CLICK",
+        "DETAIL_ZZIM",
+        "DETAIL_PLAY_CLICK",
+        "RECOMMEND_CONTENT_CLICK"
+      ]
+    },
+    "voucher_view": {
+      "label": "이용권 페이지",
+      "synonyms": [
+        "이용권 관심",
+        "이용권 방문"
+      ],
+      "types": [
+        "VOUCHER_VIEW"
+      ],
+      "note": "이용권 관심은 VOUCHER_VIEW만으로 판단한다 (CONTENT_PURCHASE_CLICK은 개별 콘텐츠 구매 행동)"
+    }
+  },
+  "funnel_steps": {
+    "signup": {
+      "order": 1,
+      "label": "가입",
+      "base": null,
+      "rule": "user_dim 전체",
+      "sql": "SELECT user_key FROM user_dim",
+      "reference_count": 50000
+    },
+    "explored": {
+      "order": 2,
+      "label": "탐색",
+      "base": "signup",
+      "window": "D0~D30",
+      "rule": "능동 탐색 행동 1건 이상",
+      "sql": "SELECT DISTINCT user_key FROM behavior_fact WHERE behavior_type IN ('SEARCH_OPEN', 'SEARCH_SUBMIT', 'SEARCH_CONTENT_CLICK', 'SEARCH_MORE_CLICK', 'CATEGORY_VISIT', 'DETAIL_MORE', 'DETAIL_LIST_CLICK', 'DETAIL_ZZIM', 'RECOMMEND_CONTENT_CLICK', 'DETAIL_PLAY_CLICK') AND relative_signup_day BETWEEN 0 AND 30",
+      "reference_count": 30121
+    },
+    "voucher_viewed": {
+      "order": 3,
+      "label": "이용권 관심",
+      "base": "signup",
+      "window": "D0~D30",
+      "rule": "VOUCHER_VIEW 1건 이상",
+      "sql": "SELECT DISTINCT user_key FROM behavior_fact WHERE behavior_type = 'VOUCHER_VIEW' AND relative_signup_day BETWEEN 0 AND 30",
+      "reference_count": 28651
+    },
+    "paid_d30": {
+      "order": 4,
+      "label": "첫 결제",
+      "synonyms": [
+        "결제",
+        "가입 한 달 이내 결제",
+        "D+30 결제"
+      ],
+      "base": "signup",
+      "window": "D0~D30",
+      "rule": "payment_order = 1 이고 relative_signup_day <= 30",
+      "sql": "SELECT user_key, relative_signup_day AS pay_day FROM payment_fact WHERE payment_order = 1 AND relative_signup_day <= 30",
+      "reference_count": 12468
+    },
+    "initial_watch": {
+      "order": 5,
+      "label": "초기 시청 성공",
+      "synonyms": [
+        "초기 시청",
+        "초기 활성화"
+      ],
+      "base": "paid_d30",
+      "window": "결제 후 D+0~7",
+      "rule": "첫 결제일~+7일 고유 시청일 >= 2",
+      "sql": "SELECT p.user_key FROM payment_fact p JOIN watch_daily_fact w ON w.user_key = p.user_key AND w.relative_signup_day BETWEEN p.relative_signup_day AND p.relative_signup_day + 7 WHERE p.payment_order = 1 AND p.relative_signup_day <= 30 GROUP BY p.user_key HAVING COUNT(DISTINCT w.relative_signup_day) >= 2",
+      "reference_count": 7983
+    },
+    "initial_watch_fail": {
+      "order": 5,
+      "label": "초기 시청 실패",
+      "base": "paid_d30",
+      "window": "결제 후 D+0~7",
+      "rule": "같은 기간 고유 시청일 0~1일 (paid_d30 중 initial_watch가 아닌 고객)",
+      "reference_count": 4485
+    },
+    "retained_after_activation": {
+      "order": 6,
+      "label": "지속 시청",
+      "synonyms": [
+        "지속 시청 유지",
+        "유지"
+      ],
+      "base": "initial_watch",
+      "window": "결제 후 D+0~28",
+      "rule": "초기 시청 성공 AND 결제 후 D+22~28 시청 기록 AND 결제 후 D+0~21 시청 기록",
+      "reference_count": 5088,
+      "note": "1-2 분석 정의. 분모는 초기 시청 성공 고객이다."
+    },
+    "retained_d22_28": {
+      "order": 6,
+      "label": "지속 시청 (대시보드 기준)",
+      "base": "paid_d30",
+      "window": "결제 후 D+0~28",
+      "rule": "첫 결제 고객 AND 결제 후 D+22~28 시청 AND 결제 후 D+0~21 시청 (초기 시청 성공 여부 무관)",
+      "reference_count": 5967,
+      "note": "대시보드 KPI 정의. retained_after_activation과 분모가 다르므로 질문이 기준을 정하지 않으면 두 값을 구분해서 답한다."
+    },
+    "not_retained": {
+      "order": 6,
+      "label": "미유지",
+      "base": "initial_watch",
+      "rule": "초기 시청 성공 AND 결제 후 D+22~28 시청 없음",
+      "reference_count": 2895
+    }
+  },
+  "metrics": {
+    "user_count": {
+      "label": "고객 수",
+      "expression": "COUNT(DISTINCT user_key)"
+    },
+    "explore_rate": {
+      "label": "탐색률",
+      "numerator": "explored",
+      "denominator": "signup",
+      "format": "percent",
+      "reference_value": 0.602
+    },
+    "voucher_view_rate": {
+      "label": "이용권 방문률",
+      "numerator": "voucher_viewed",
+      "denominator": "signup",
+      "format": "percent",
+      "reference_value": 0.573
+    },
+    "pay_rate_d30": {
+      "label": "D+30 결제율",
+      "synonyms": [
+        "결제율",
+        "결제 전환율",
+        "가입 한 달 이내 결제율"
+      ],
+      "numerator": "paid_d30",
+      "denominator": "segment",
+      "format": "percent",
+      "note": "분모는 질문한 세그먼트(기본은 가입 고객)"
+    },
+    "activation_rate": {
+      "label": "초기 시청 성공률",
+      "numerator": "initial_watch",
+      "denominator": "paid_d30",
+      "format": "percent",
+      "reference_value": 0.64
+    },
+    "activation_fail_rate": {
+      "label": "초기 시청 실패율",
+      "numerator": "initial_watch_fail",
+      "denominator": "paid_d30",
+      "format": "percent",
+      "reference_value": 0.36
+    },
+    "retention_rate": {
+      "label": "지속률",
+      "numerator": "retained_after_activation",
+      "denominator": "initial_watch",
+      "format": "percent",
+      "reference_value": 0.637
+    },
+    "retention_rate_dashboard": {
+      "label": "D+22~28 시청 유지율 (대시보드)",
+      "numerator": "retained_d22_28",
+      "denominator": "paid_d30",
+      "format": "percent",
+      "reference_value": 0.489
+    },
+    "behavior_experience_rate": {
+      "label": "행동 경험률",
+      "rule": "해당 behavior_group 이벤트가 1건 이상인 고객 ÷ 대상 고객",
+      "window_rule": "결제 고객은 D+0~첫 결제일, 미결제 고객은 D+0~D+30",
+      "format": "percent"
+    },
+    "avg_behavior_count": {
+      "label": "평균 행동 횟수",
+      "rule": "behavior_group의 event_count 합계 ÷ 대상 고객 수",
+      "format": "number"
+    },
+    "first_week_watch_days": {
+      "label": "첫 주 시청일",
+      "rule": "첫 결제일~+7일 고유 시청일 수 (0~8)",
+      "format": "number"
+    },
+    "first_week_content_count": {
+      "label": "첫 주 시청 콘텐츠 수",
+      "rule": "user_content_summary.first_watch_day가 첫 결제일~+7일인 content_key 수",
+      "buckets": [
+        "1개",
+        "2개",
+        "3~4개",
+        "5개 이상"
+      ],
+      "format": "number"
+    },
+    "watch_channel_combo": {
+      "label": "시청 채널 조합",
+      "rule": "결제 후 시청한 channel_type(V, M, L) 조합",
+      "values": [
+        "영화",
+        "VOD",
+        "VOD + 영화",
+        "VOD + LIVE",
+        "VOD + 영화 + LIVE"
+      ]
+    }
+  },
+  "dimensions": {
+    "explore_type": {
+      "label": "탐색 행동 유형",
+      "derived": true,
+      "values": {
+        "능동 탐색": "active_explore 1건 이상",
+        "홈·이용권만": "active_explore 없음 AND 행동 기록 있음",
+        "행동 기록 없음": "behavior_fact 기록 없음"
+      }
+    },
+    "auto_payment": {
+      "label": "자동결제 여부",
+      "column": "payment_fact.is_auto_payment",
+      "values": {
+        "1": "자동결제",
+        "0": "비자동"
+      },
+      "scope": "첫 결제(payment_order = 1)"
+    },
+    "product_family": {
+      "label": "이용권 상품",
+      "column": "payment_fact.product_name",
+      "scope": "첫 결제(payment_order = 1)",
+      "sql": "CASE WHEN product_name LIKE '%장기이용권%' THEN '장기이용권(12개월)' WHEN product_name = '3 PACK' THEN '3 PACK' WHEN product_name LIKE '%번들%' THEN '번들' WHEN product_name LIKE '더블%' THEN '더블(결합)' WHEN product_name LIKE '%[쿠폰]%' OR product_name LIKE '% X %' OR product_name LIKE '%(현대차)%' THEN '기타(제휴·쿠폰)' WHEN product_name LIKE '광고형 스탠다드%' THEN '광고형 스탠다드' WHEN product_name LIKE '베이직%' THEN '베이직' WHEN product_name LIKE '스탠다드%' THEN '스탠다드' WHEN product_name LIKE '프리미엄%' THEN '프리미엄' ELSE '기타(제휴·쿠폰)' END",
+      "note": "순서가 중요하다. 장기이용권과 더블 상품명에도 '스탠다드', '프리미엄'이 들어 있으므로 먼저 판정한다."
+    },
+    "device": {
+      "label": "가입 기기",
+      "column": "user_dim.signup_device_type",
+      "values": [
+        "mobile",
+        "android",
+        "ios",
+        "pc"
+      ]
+    },
+    "age_band": {
+      "label": "연령대",
+      "column": "user_dim.age_band",
+      "values": [
+        "UNDER_14",
+        "14_19",
+        "20_29",
+        "30_39",
+        "40_49",
+        "50_59",
+        "60_69",
+        "70_PLUS",
+        "UNKNOWN"
+      ]
+    },
+    "push": {
+      "label": "푸시 수신",
+      "column": "user_dim.push_opt_in_current",
+      "values": {
+        "1": "수신 가능",
+        "0": "그 외"
+      }
+    },
+    "channel_type": {
+      "label": "시청 유형",
+      "column": "watch_daily_fact.channel_type",
+      "values": {
+        "V": "VOD",
+        "M": "영화",
+        "L": "LIVE"
+      }
+    },
+    "genre": {
+      "label": "장르",
+      "column": "content_genre_bridge.genre_name",
+      "note": "다중 분류. 장르별 수치를 합산하면 전체보다 커진다."
+    },
+    "content_title": {
+      "label": "콘텐츠",
+      "column": "content_dim.title",
+      "min_sample": 90,
+      "note": "콘텐츠별 비율은 시청자 90명 이상만 비교한다."
+    }
+  },
+  "segments": {
+    "explore_and_voucher": {
+      "label": "탐색 + 이용권 관심 고객",
+      "rule": "explored AND voucher_viewed",
+      "reference": {
+        "pay_rate_d30": 0.437
+      }
+    },
+    "explore_only": {
+      "label": "탐색만 한 고객",
+      "rule": "explored AND NOT voucher_viewed",
+      "reference": {
+        "pay_rate_d30": 0.221
+      }
+    },
+    "no_explore": {
+      "label": "탐색 X 고객",
+      "rule": "NOT explored",
+      "reference": {
+        "pay_rate_d30": 0.07
+      }
+    },
+    "payer": {
+      "label": "결제 고객",
+      "rule": "paid_d30"
+    },
+    "non_payer": {
+      "label": "미결제 고객",
+      "rule": "NOT paid_d30"
+    },
+    "no_explore_non_auto": {
+      "label": "탐색 없이 비자동결제한 고객",
+      "rule": "paid_d30 AND NOT explored AND auto_payment = 0",
+      "reference": {
+        "activation_rate": 0.161
+      }
+    }
+  },
+  "out_of_scope": {
+    "description": "해석·추정은 시맨틱 레이어가 아니라 답변 근거 문서로 사용한다.",
+    "items": [
+      "초기 시청 실패 고객은 외부 제휴처에서 결합상품을 사고 이용권 등록을 위해 가입했을 가능성이 높다 (추정).",
+      "초기 시청 성공 고객은 가입 전에 볼 콘텐츠를 정해두었을 가능성이 높다 (추정).",
+      "지속 시청 고객은 매주 새 회차가 나오는 예능·일일드라마·교양으로 시청을 시작한 경우가 많다 (해석).",
+      "결론: 초기 단계는 온보딩, 지속 단계는 추천이 필요하다."
+    ]
+  }
+}
