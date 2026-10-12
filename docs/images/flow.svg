@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-label="질문 처리 흐름">
+  <style>
+    text { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', system-ui, sans-serif; fill: #191f28; }
+    .h { font-size: 22px; font-weight: 800; }
+    .t { font-size: 14.5px; font-weight: 700; }
+    .s { font-size: 11.5px; fill: #6b7684; }
+    .l { font-size: 11.5px; font-weight: 700; fill: #4e5968; }
+    .lr { font-size: 11.5px; font-weight: 700; fill: #f04452; }
+    .n { font-size: 11px; font-weight: 800; fill: #3182f6; }
+    .box { fill: #ffffff; stroke: #d1d6db; stroke-width: 1.2; }
+    .acc { fill: #e8f3ff; stroke: #3182f6; stroke-width: 1.4; }
+    .bad { fill: #ffeeee; stroke: #f04452; stroke-width: 1.4; }
+    .warn { fill: #fff4e5; stroke: #d9822b; stroke-width: 1.4; }
+    .ar { stroke: #4e5968; stroke-width: 1.6; fill: none; marker-end: url(#a); }
+    .arr { stroke: #f04452; stroke-width: 1.6; fill: none; marker-end: url(#ar); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#4e5968"/></marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#f04452"/></marker>
+  </defs>
+  <rect width="1200" height="430" rx="20" fill="#f9fafb"/>
+  <text x="40" y="48" class="h">질문 하나가 처리되는 흐름</text>
+  <text x="40" y="74" class="s">모든 단계는 Request ID 로 묶여 실행 로그에 남고, 하네스 모니터링 탭에서 다시 볼 수 있습니다.</text>
+
+  <!-- 주 흐름 -->
+  <rect x="24" y="110" width="124" height="96" rx="12" class="acc"/>
+  <text x="38" y="132" class="n">1</text><text x="38" y="154" class="t">질문</text>
+  <text x="38" y="176" class="s">업무 용어로</text><text x="38" y="194" class="s">"20대 미시청률은?"</text>
+
+  <rect x="168" y="110" width="124" height="96" rx="12" class="box"/>
+  <text x="182" y="132" class="n">2</text><text x="182" y="154" class="t">요청 안전성</text>
+  <text x="182" y="176" class="s">삭제·변경 요청은</text><text x="182" y="194" class="s">LLM 호출 전 차단</text>
+
+  <rect x="312" y="110" width="124" height="96" rx="12" class="box"/>
+  <text x="326" y="132" class="n">3</text><text x="326" y="154" class="t">정의 검색</text>
+  <text x="326" y="176" class="s">시맨틱 레이어 RAG</text><text x="326" y="194" class="s">'20대' → 실제 코드 확인</text>
+
+  <rect x="456" y="110" width="124" height="96" rx="12" class="box"/>
+  <text x="470" y="132" class="n">4</text><text x="470" y="154" class="t">데이터 가용성</text>
+  <text x="470" y="176" class="s">원천 없는 지표는</text><text x="470" y="194" class="s">숫자를 만들지 않음</text>
+
+  <rect x="600" y="110" width="124" height="96" rx="12" class="box"/>
+  <text x="614" y="132" class="n">5</text><text x="614" y="154" class="t">SQL 생성</text>
+  <text x="614" y="176" class="s">Claude 또는 템플릿</text><text x="614" y="194" class="s">계산식·조건 조각 조합</text>
+
+  <rect x="744" y="110" width="124" height="96" rx="12" class="box"/>
+  <text x="758" y="132" class="n">6</text><text x="758" y="154" class="t">하네스 검증</text>
+  <text x="758" y="176" class="s">토큰 → 컴파일</text><text x="758" y="194" class="s">→ 실행 계획</text>
+
+  <rect x="888" y="110" width="124" height="96" rx="12" class="box"/>
+  <text x="902" y="132" class="n">7</text><text x="902" y="154" class="t">읽기 전용 실행</text>
+  <text x="902" y="176" class="s">query_only</text><text x="902" y="194" class="s">5,000행 · 8초 제한</text>
+
+  <rect x="1032" y="110" width="144" height="96" rx="12" class="acc"/>
+  <text x="1046" y="132" class="n">8</text><text x="1046" y="154" class="t">답변 · 로그</text>
+  <text x="1046" y="176" class="s">숫자 · 차트 · 분석 기준</text><text x="1046" y="194" class="s">SQL · 검색 Context</text>
+
+  <path d="M148 158 H164" class="ar"/><path d="M292 158 H308" class="ar"/><path d="M436 158 H452" class="ar"/>
+  <path d="M580 158 H596" class="ar"/><path d="M724 158 H740" class="ar"/><path d="M868 158 H884" class="ar"/><path d="M1012 158 H1028" class="ar"/>
+
+  <!-- 분기 -->
+  <rect x="168" y="290" width="124" height="70" rx="12" class="bad"/>
+  <text x="182" y="318" class="t">차단</text><text x="182" y="340" class="s">읽기 전용 안내</text>
+  <path d="M230 206 V286" class="arr"/><text x="238" y="250" class="lr">변경 요청</text>
+
+  <rect x="456" y="290" width="124" height="70" rx="12" class="warn"/>
+  <text x="470" y="318" class="t">추가 데이터 필요</text><text x="470" y="340" class="s">필요한 원천 안내</text>
+  <path d="M518 206 V286" class="ar"/><text x="526" y="250" class="l">원천 없음</text>
+
+  <rect x="600" y="290" width="124" height="70" rx="12" class="bad"/>
+  <text x="614" y="318" class="t">위험 SQL 차단</text><text x="614" y="340" class="s">수정으로 우회 안 함</text>
+  <path d="M752 206 L700 286" class="arr"/><text x="610" y="250" class="lr">쓰기·다중 문장</text>
+
+  <rect x="784" y="290" width="200" height="70" rx="12" class="warn"/>
+  <text x="798" y="318" class="t">자동 수정 (최대 2회)</text><text x="798" y="340" class="s">오류 유형 + 메시지 → 수정기</text>
+  <path d="M820 206 V286" class="ar"/><text x="772" y="262" class="l">검증 오류</text>
+  <path d="M950 206 V286" class="ar"/><text x="958" y="262" class="l">실행 오류</text>
+  <path d="M860 290 V210" class="ar"/><text x="868" y="250" class="l">재검증</text>
+
+  <text x="40" y="404" class="s">위험 SQL: INSERT · UPDATE · DELETE · DROP · 다중 문장 · 시스템 테이블 · 파일 함수 / 수정 대상: 문법 · 없는 테이블·컬럼 · 타입 · JOIN · 함수 · 시간 초과</text>
+</svg>

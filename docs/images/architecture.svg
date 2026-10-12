@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="790" viewBox="0 0 1200 790" role="img" aria-label="Ajouney+ NL2SQL 에이전트 시스템 구조">
+  <style>
+    text { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', system-ui, sans-serif; fill: #191f28; }
+    .h { font-size: 22px; font-weight: 800; }
+    .lane { font-size: 14px; font-weight: 800; fill: #3182f6; }
+    .t { font-size: 15px; font-weight: 700; }
+    .m { font-size: 12.5px; fill: #333d4b; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .s { font-size: 12px; fill: #6b7684; }
+    .l { font-size: 11.5px; font-weight: 700; fill: #4e5968; }
+    .lr { font-size: 11.5px; font-weight: 700; fill: #f04452; }
+    .box { fill: #ffffff; stroke: #d1d6db; stroke-width: 1.2; }
+    .acc { fill: #e8f3ff; stroke: #3182f6; stroke-width: 1.4; }
+    .ok { fill: #e6f7ef; stroke: #03a66d; stroke-width: 1.4; }
+    .warn { fill: #fff4e5; stroke: #d9822b; stroke-width: 1.4; }
+    .panel { fill: #ffffff; stroke: #e5e8eb; stroke-width: 1.2; }
+    .ar { stroke: #4e5968; stroke-width: 1.6; fill: none; marker-end: url(#a); }
+    .arr { stroke: #f04452; stroke-width: 1.6; fill: none; marker-end: url(#ar); stroke-dasharray: 5 4; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#4e5968"/></marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#f04452"/></marker>
+  </defs>
+  <rect width="1200" height="790" rx="20" fill="#f9fafb"/>
+  <text x="40" y="48" class="h">Ajouney+ NL2SQL 에이전트 · 시스템 구조</text>
+
+  <!-- ① 빌드 -->
+  <rect x="24" y="72" width="1152" height="230" rx="16" class="panel"/>
+  <text x="44" y="100" class="lane">① 빌드 · 로컬 Node.js (npm run build:db → build:data → build)</text>
+
+  <rect x="48" y="118" width="190" height="84" rx="12" class="box"/>
+  <text x="64" y="146" class="t">원천 CSV 7종</text>
+  <text x="64" y="168" class="m">data/csv/</text>
+  <text x="64" y="188" class="s">가입 고객 50,000명 · git 제외</text>
+
+  <rect x="290" y="118" width="230" height="84" rx="12" class="box"/>
+  <text x="306" y="146" class="t">build-db.mjs</text>
+  <text x="306" y="168" class="m">→ .build/ott.db</text>
+  <text x="306" y="188" class="s">PK·FK 검증 · 고객 여정 파생 테이블</text>
+
+  <rect x="572" y="118" width="230" height="84" rx="12" class="box"/>
+  <text x="588" y="146" class="t">export-data.mjs</text>
+  <text x="588" y="168" class="s">팀 메타데이터 스키마로 추출</text>
+  <text x="588" y="188" class="s">보충 컬럼 · 정의 보정 적용</text>
+
+  <rect x="854" y="118" width="298" height="84" rx="12" class="acc"/>
+  <text x="870" y="146" class="t">브라우저용 데이터</text>
+  <text x="870" y="168" class="m">dist/data/*.js</text>
+  <text x="870" y="188" class="s">테이블 7개 · 시맨틱 정의 63개</text>
+
+  <rect x="572" y="226" width="230" height="62" rx="12" class="box"/>
+  <text x="588" y="252" class="t">시맨틱 레이어</text>
+  <text x="588" y="274" class="m">data/*.json</text>
+  <text x="680" y="274" class="s">팀 정의+보충+보정</text>
+
+  <path d="M238 160 H286" class="ar"/>
+  <path d="M520 160 H568" class="ar"/>
+  <path d="M802 160 H850" class="ar"/>
+  <path d="M687 226 V206" class="ar"/>
+
+  <!-- ② 실행 -->
+  <rect x="24" y="322" width="1152" height="444" rx="16" class="panel"/>
+  <text x="44" y="350" class="lane">② 실행 · 브라우저 (claude.ai 아티팩트, 서버 없음)</text>
+
+  <rect x="48" y="368" width="250" height="370" rx="12" class="box"/>
+  <text x="68" y="398" class="t">팀 대시보드 (iframe)</text>
+  <text x="68" y="424" class="s">문제 1 결과물 · 화면 전체 사용</text>
+  <text x="68" y="456" class="s">· 퍼널 KPI · 주차별 코호트</text>
+  <text x="68" y="478" class="s">· 퍼널 병목 · 타깃 우선순위</text>
+  <text x="68" y="500" class="s">· 세그먼트 비교 · 콘텐츠 유지율</text>
+  <text x="68" y="522" class="s">· 핵심 타깃(선택 피로 방랑 유저)</text>
+  <text x="68" y="560" class="s">오른쪽 패널에서 같은 데이터로</text>
+  <text x="68" y="580" class="s">질문 · 검증</text>
+
+  <rect x="330" y="368" width="650" height="56" rx="12" class="acc"/>
+  <text x="350" y="394" class="t">AI 에이전트 패널</text>
+  <text x="350" y="413" class="s">챗봇 탭 · 하네스 모니터링 탭 (web/js/ui)</text>
+
+  <rect x="330" y="458" width="170" height="92" rx="12" class="box"/>
+  <text x="346" y="484" class="t">rag.js</text>
+  <text x="346" y="506" class="s">정의 검색 (BM25+별칭)</text>
+  <text x="346" y="526" class="s">세그먼트 값 DB 확인</text>
+
+  <rect x="540" y="458" width="170" height="92" rx="12" class="box"/>
+  <text x="556" y="484" class="t">agent.js</text>
+  <text x="556" y="506" class="s">SQL 생성 요청</text>
+  <text x="556" y="526" class="s">하네스 반복 · 로그</text>
+
+  <rect x="800" y="458" width="180" height="92" rx="12" class="box"/>
+  <text x="816" y="484" class="t">core.js</text>
+  <text x="816" y="506" class="s">토큰→컴파일→실행 계획</text>
+  <text x="816" y="526" class="s">읽기 전용 실행</text>
+
+  <rect x="1010" y="458" width="142" height="92" rx="12" class="acc"/>
+  <text x="1026" y="484" class="t">sql.js</text>
+  <text x="1026" y="506" class="s">브라우저 SQLite</text>
+  <text x="1026" y="526" class="m">query_only</text>
+
+  <path d="M415 424 V454" class="ar"/>
+  <path d="M500 504 H536" class="ar"/>
+  <path d="M710 490 H796" class="ar"/>
+  <text x="737" y="482" class="l">SQL</text>
+  <path d="M800 520 H714" class="arr"/>
+  <text x="722" y="542" class="lr">오류 → 수정 ≤2회</text>
+  <path d="M980 504 H1006" class="ar"/>
+  <path d="M1081 202 V454" class="ar"/>
+  <text x="1090" y="340" class="l">적재</text>
+
+  <rect x="470" y="618" width="170" height="74" rx="12" class="ok"/>
+  <text x="486" y="644" class="t">Claude</text>
+  <text x="486" y="664" class="s">claude.ai sample 기능</text>
+  <text x="486" y="682" class="s">질문한 사람 계정 사용</text>
+
+  <rect x="652" y="618" width="170" height="74" rx="12" class="warn"/>
+  <text x="668" y="644" class="t">템플릿 모드</text>
+  <text x="668" y="664" class="s">LLM 없이 정의 조각</text>
+  <text x="668" y="682" class="s">조립 · 대체 경로</text>
+
+  <path d="M590 550 V614" class="ar"/>
+  <path d="M680 550 V614" class="ar"/>
+
+  <rect x="860" y="618" width="292" height="74" rx="12" class="box"/>
+  <text x="876" y="644" class="t">공유 로그 DB</text>
+  <text x="876" y="664" class="s">claude.ai db 기능 · Request ID 단위</text>
+  <text x="876" y="682" class="s">하네스 모니터링 탭에서 조회</text>
+  <path d="M900 550 V614" class="ar"/>
+  <text x="908" y="590" class="l">로그</text>
+
+  <text x="330" y="738" class="s">Claude 를 쓸 수 없으면 템플릿 모드로 자동 대체 · 위험 SQL 은 수정 없이 차단 · 고객 키는 로그에서 마스킹</text>
+</svg>

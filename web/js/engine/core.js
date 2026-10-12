@@ -186,6 +186,8 @@ const POLICY = { maxRows: 5000, timeoutMs: 8000, maxRepairs: 2 };
 const FORBIDDEN_KW = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE', 'MERGE', 'UPSERT', 'ATTACH', 'DETACH', 'PRAGMA', 'VACUUM', 'REINDEX', 'ANALYZE', 'GRANT', 'REVOKE', 'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVEPOINT', 'RELEASE', 'COPY', 'LOAD', 'INTO', 'OUTFILE', 'DUMPFILE', 'EXEC', 'EXECUTE', 'CALL'];
 const FORBIDDEN_FN = ['load_extension', 'readfile', 'writefile', 'edit', 'fts3_tokenizer', 'sqlite_compileoption_get', 'zipfile', 'sqlar_compress', 'sqlar_uncompress', 'shell', 'system'];
 const WRITE_OPCODES = new Set(['OpenWrite', 'Insert', 'Delete', 'IdxInsert', 'IdxDelete', 'Destroy', 'Clear', 'CreateBtree', 'ParseSchema', 'DropTable', 'DropIndex', 'DropTrigger', 'VUpdate', 'VCreate', 'VDestroy', 'Vacuum', 'JournalMode', 'Expire', 'TableLock', 'SetCookie', 'IntegrityCk', 'LoadAnalysis', 'ResetSorter_x']);
+// 괄호 앞에 와도 함수가 아닌 SQL 키워드 (호출 함수 목록 표시에서 제외)
+const SQL_WORDS = new Set(['in', 'exists', 'over', 'as', 'where', 'and', 'or', 'not', 'on', 'from', 'join', 'select', 'when', 'then', 'else', 'case', 'values', 'using', 'having', 'by']);
 const NON_SQLITE = [['ILIKE', 'ILIKE 대신 LIKE (SQLite LIKE 는 대소문자 무시)'], ['DATE_TRUNC', "date_trunc 대신 strftime('%Y-%m', 날짜)"], ['QUALIFY', 'QUALIFY 는 SQLite 미지원 — 서브쿼리로'], ['INTERVAL', "INTERVAL 대신 date(x, '+N day')"], ['TOP', 'TOP n 대신 LIMIT n'], ['NVL', 'NVL 대신 COALESCE'], ['ISNULL', 'ISNULL 대신 COALESCE'], ['GETDATE', "GETDATE 대신 date('now')"]];
 
 function allowedTables() { return new Set([...DB.loaded].filter(t => META_TABLES.has(t))); }
@@ -215,7 +217,7 @@ function validateSql(sql) {
   if (!add('keywords', '위험 명령 (데이터 변경·스키마·연결)', !badKw.length, badKw.length ? `발견: ${badKw.join(', ')}` : '없음')) return done('blocked', 'Permission Error', `데이터 변경·삭제·스키마 변경 등 위험 명령이 포함되어 실행 전 차단했습니다: ${badKw.join(', ')}`);
   const fnCalls = body.map((t, k) => t.t === 'word' && body[k + 1]?.t === 'lp' ? t.v.toLowerCase() : null).filter(Boolean);
   const badFn = [...new Set(fnCalls.filter(f => FORBIDDEN_FN.includes(f)))];
-  if (!add('functions', '파일·확장 기능 함수', !badFn.length, badFn.length ? `발견: ${badFn.join(', ')}` : `호출 함수: ${[...new Set(fnCalls)].filter(f => !['in', 'exists', 'over', 'as'].includes(f)).join(', ') || '없음'}`)) return done('blocked', 'Permission Error', `외부 파일 접근·확장 로드 함수는 허용되지 않습니다: ${badFn.join(', ')}`);
+  if (!add('functions', '파일·확장 기능 함수', !badFn.length, badFn.length ? `발견: ${badFn.join(', ')}` : `호출 함수: ${[...new Set(fnCalls)].filter(f => !SQL_WORDS.has(f)).join(', ') || '없음'}`)) return done('blocked', 'Permission Error', `외부 파일 접근·확장 로드 함수는 허용되지 않습니다: ${badFn.join(', ')}`);
   if (body.some(t => t.t === 'param')) { add('params', '바인딩 파라미터', false, '? / :name 파라미터 사용'); return done('fail', 'Syntax Error', '값을 바인딩 파라미터(?, :name) 대신 리터럴로 작성해야 합니다.'); }
   const dialect = NON_SQLITE.filter(([kw]) => words.some(w => w.u === kw)).concat(body.some(t => t.v === '::') ? [['::', ':: 형 변환 대신 CAST(x AS 타입)']] : []);
   if (!add('dialect', 'SQLite 방언 호환', !dialect.length, dialect.length ? dialect.map(d => d[1]).join(' · ') : 'SQLite 3 문법')) return done('fail', 'Syntax Error', `현재 DB(SQLite)에서 지원하지 않는 구문: ${dialect.map(d => d[0]).join(', ')}`, { hint: dialect.map(d => d[1]) });
